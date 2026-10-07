@@ -1,0 +1,3 @@
+# Externalized Configuration for HISHOB Auth Service
+jwt:
+  expiration: 86400000

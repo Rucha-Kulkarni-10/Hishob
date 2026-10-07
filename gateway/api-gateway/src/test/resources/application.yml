@@ -1,0 +1,96 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    config:
+      enabled: false
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/auth/**
+            - id: auth-service-friends-core
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/requests/**
+            - id: auth-service-friends-list
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends
+            - id: auth-service-friends-block
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/{targetUserId}/block
+            - id: auth-service-friends-remove
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/{friendUserId}
+                - Method=DELETE
+            - id: auth-service-users
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/users/**
+            - id: expense-service-personal-expenses
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/personal-expenses/**
+            - id: expense-service-friend-expenses
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/*/expenses/**
+            - id: expense-service-expenses
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/expenses/**
+            - id: expense-service-group-expenses
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/groups/*/expenses/**
+            - id: balance-service-personal
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/personal-balances/**
+            - id: balance-service-friend-balance
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/*/balance
+            - id: balance-service
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/groups/*/balances
+            - id: settlement-service-personal
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/personal-settlements/**
+            - id: settlement-service-friend-settlements
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/friends/*/settlements
+            - id: settlement-service-history
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/groups/*/settlements/history
+            - id: settlement-service
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/groups/*/settlements
+            - id: notification-service
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/notifications/**
+            - id: group-service
+              uri: http://localhost:9999
+              predicates:
+                - Path=/api/groups/**
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false

@@ -1,0 +1,83 @@
+spring:
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/auth/**
+            - id: auth-service-friends-core
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/friends/requests/**
+            - id: auth-service-friends-list
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/friends
+            - id: auth-service-friends-block
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/friends/{targetUserId}/block
+            - id: auth-service-friends-remove
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/friends/{friendUserId}
+                - Method=DELETE
+            - id: auth-service-users
+              uri: lb://auth-service
+              predicates:
+                - Path=/api/users/**
+            - id: expense-service-personal-expenses
+              uri: lb://expense-service
+              predicates:
+                - Path=/api/personal-expenses/**
+            - id: expense-service-friend-expenses
+              uri: lb://expense-service
+              predicates:
+                - Path=/api/friends/*/expenses/**
+            - id: expense-service-expenses
+              uri: lb://expense-service
+              predicates:
+                - Path=/api/expenses/**
+            - id: expense-service-group-expenses
+              uri: lb://expense-service
+              predicates:
+                - Path=/api/groups/*/expenses/**
+            - id: balance-service-personal
+              uri: lb://balance-service
+              predicates:
+                - Path=/api/personal-balances/**
+            - id: balance-service-friend-balance
+              uri: lb://balance-service
+              predicates:
+                - Path=/api/friends/*/balance
+            - id: balance-service
+              uri: lb://balance-service
+              predicates:
+                - Path=/api/groups/*/balances
+            - id: settlement-service-personal
+              uri: lb://settlement-service
+              predicates:
+                - Path=/api/personal-settlements/**
+            - id: settlement-service-friend-settlements
+              uri: lb://settlement-service
+              predicates:
+                - Path=/api/friends/*/settlements
+            - id: settlement-service-history
+              uri: lb://settlement-service
+              predicates:
+                - Path=/api/groups/*/settlements/history
+            - id: settlement-service
+              uri: lb://settlement-service
+              predicates:
+                - Path=/api/groups/*/settlements
+            - id: notification-service
+              uri: lb://notification-service
+              predicates:
+                - Path=/api/notifications/**
+            - id: group-service
+              uri: lb://group-service
+              predicates:
+                - Path=/api/groups/**

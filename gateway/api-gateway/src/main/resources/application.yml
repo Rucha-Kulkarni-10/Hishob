@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  config:
+    import: "optional:configserver:http://localhost:8888"
+  cloud:
+    gateway:
+      # ── CORS ─────────────────────────────────────────────────────────────────
+      # NOTE: CORS is handled programmatically in ApiGatewayApplication via the
+      # CorsWebFilter bean. The YAML globalcors section is intentionally absent
+      # to prevent double-processing in Spring Cloud Gateway / WebFlux.
+      #
+      # Allowed origin (dev):  http://localhost:5173
+      # Allowed methods:       GET, POST, PUT, DELETE, OPTIONS
+      # Allowed headers:       Content-Type, Authorization
+      # Credentials:           false (Bearer JWT, no cookies)
+      #
+      # X-Internal-Token is intentionally never listed — it is a backend-only
+      # service-to-service credential and must never be sent from the browser.
+      #
+      # NOTE: Routes are externalized to the Spring Cloud Config Server repository
+      # under api-gateway.yml (both file: and classpath: mirrors). Loading routes
+      # from the higher-precedence Config Server import avoids Spring Boot 4's
+      # indexed-list collection binder treating the Config Server PropertySource
+      # (with zero routes) as authoritative, which previously resulted in 404s.
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/

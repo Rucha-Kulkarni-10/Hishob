@@ -1,0 +1,4 @@
+# Externalized Configuration for HISHOB Expense Service
+hishob:
+  expense-service:
+    placeholder: true

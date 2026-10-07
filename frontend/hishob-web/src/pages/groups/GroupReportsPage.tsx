@@ -1,0 +1,507 @@
+/**
+ * GroupReportsPage — /groups/:id/reports
+ *
+ * Implements the approved Reports & Analytics MVP:
+ * 1. Financial Overview (Total Group Spend, Expense Count, Average Expense, Settled Volume)
+ * 2. Member Spending (Total Paid, Total Share, Net Position, CSS visual comparison)
+ * 3. Monthly Spending Trend (strictly by Expense.createdAt)
+ * 4. Filters (All Time, This Month, Last 30 Days, Custom Range, Payer, Split Type)
+ * 5. CSV Export
+ * 6. Print / PDF friendly layout via window.print() and @media print
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { getGroupDetail, listMembers } from '@/services/groupService';
+import { getGroupAnalytics, exportGroupExpensesCsv } from '@/services/analyticsService';
+import type { GroupResponse, MemberResponse } from '@/types/groups';
+import type {
+  GroupAnalyticsResponse,
+  TimeRangeOption,
+  SplitTypeFilter,
+  MemberSpendingSummary,
+} from '@/types/analytics';
+import { useAuth } from '@/hooks/useAuth';
+import { getErrorMessage } from '@/utils/errorUtils';
+import LoadingState from '@/components/common/LoadingState';
+import EmptyState from '@/components/common/EmptyState';
+import SpendingOverviewCards from '@/components/reports/SpendingOverviewCards';
+import MemberSpendingBar from '@/components/reports/MemberSpendingBar';
+import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
+import ReportFilters from '@/components/reports/ReportFilters';
+
+const PAID_BY_COLUMN_INDEX = 3;
+const USER_PREFIX_RE = /^User-([0-9a-fA-F]{8})$/;
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (c === '"') {
+        inQuotes = false;
+      } else {
+        current += c;
+      }
+    } else {
+      if (c === '"') {
+        inQuotes = true;
+      } else if (c === ',') {
+        result.push(current);
+        current = '';
+      } else {
+        current += c;
+      }
+    }
+  }
+  result.push(current);
+  return result;
+}
+
+function escapeCsvField(field: string): string {
+  if (/[",\r\n]/.test(field)) {
+    return '"' + field.replace(/"/g, '""') + '"';
+  }
+  return field;
+}
+
+function resolvePaidByName(
+  rawValue: string,
+  prefixToName: Record<string, string>,
+  fullIdToName: Record<string, string>
+): string {
+  const trimmed = rawValue.trim();
+
+  const prefixMatch = trimmed.match(USER_PREFIX_RE);
+  if (prefixMatch) {
+    const name = prefixToName[prefixMatch[1].toLowerCase()];
+    if (name) return name;
+    return 'Unknown member';
+  }
+
+  if (UUID_RE.test(trimmed)) {
+    const name = fullIdToName[trimmed.toLowerCase()];
+    if (name) return name;
+    return 'Unknown member';
+  }
+
+  if (trimmed) return trimmed;
+  return 'Unknown member';
+}
+
+function transformCsvPaidBy(
+  csvText: string,
+  prefixToName: Record<string, string>,
+  fullIdToName: Record<string, string>
+): string {
+  const normalized = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n');
+  const transformed: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === '') {
+      transformed.push(line);
+      continue;
+    }
+    if (i === 0) {
+      transformed.push(line);
+      continue;
+    }
+    const fields = parseCsvLine(line);
+    if (fields.length > PAID_BY_COLUMN_INDEX) {
+      fields[PAID_BY_COLUMN_INDEX] = resolvePaidByName(
+        fields[PAID_BY_COLUMN_INDEX],
+        prefixToName,
+        fullIdToName
+      );
+    }
+    transformed.push(fields.map(escapeCsvField).join(','));
+  }
+
+  return transformed.join('\r\n');
+}
+
+export default function GroupReportsPage() {
+  const { id: groupId } = useParams<{ id: string }>();
+  const { user } = useAuth();
+
+  // Page level states
+  const [group, setGroup] = useState<GroupResponse | null>(null);
+  const [members, setMembers] = useState<MemberResponse[]>([]);
+  const [analytics, setAnalytics] = useState<GroupAnalyticsResponse | null>(null);
+
+  // Status flags
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [is404, setIs404] = useState(false);
+  const [is403, setIs403] = useState(false);
+
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null);
+
+  // Filter state
+  const [timeRange, setTimeRange] = useState<TimeRangeOption>('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [payerId, setPayerId] = useState('');
+  const [splitType, setSplitType] = useState<SplitTypeFilter>('ALL');
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Member name mapping (full UUID -> name)
+  const memberNames = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const m of members) {
+      const lowerId = m.userId.toLowerCase();
+      map[lowerId] = m.name || (user && m.userId === user.id ? user.name : 'Unknown member');
+    }
+    return map;
+  }, [members, user]);
+
+  // Prefix lookup for CSV "User-xxxxxxxx" pattern (8-char UUID prefix -> name)
+  const memberPrefixNames = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const m of members) {
+      const prefix = m.userId.substring(0, 8).toLowerCase();
+      map[prefix] = m.name || (user && m.userId === user.id ? user.name : 'Unknown member');
+    }
+    return map;
+  }, [members, user]);
+
+  // Load group details & members
+  const loadPageMeta = useCallback(async (gId: string) => {
+    await Promise.resolve();
+    setPageLoading(true);
+    setPageError(null);
+    setIs404(false);
+    setIs403(false);
+
+    try {
+      const [g, ms] = await Promise.all([getGroupDetail(gId), listMembers(gId)]);
+      setGroup(g);
+      setMembers(ms);
+    } catch (err: unknown) {
+      const { default: axios } = await import('axios');
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        if (status === 404) {
+          setIs404(true);
+          return;
+        }
+        if (status === 403) {
+          setIs403(true);
+          return;
+        }
+      }
+      setPageError(getErrorMessage(err));
+    } finally {
+      setPageLoading(false);
+    }
+  }, []);
+
+  // Load analytics with current date filters
+  const loadAnalytics = useCallback(
+    async (gId: string, sDate?: string, eDate?: string) => {
+      await Promise.resolve();
+      setAnalyticsLoading(true);
+      setAnalyticsError(null);
+      try {
+        const data = await getGroupAnalytics(gId, {
+          startDate: sDate || undefined,
+          endDate: eDate || undefined,
+        });
+        setAnalytics(data);
+      } catch (err) {
+        setAnalyticsError(getErrorMessage(err));
+      } finally {
+        setAnalyticsLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!groupId) return;
+    queueMicrotask(() => {
+      void loadPageMeta(groupId);
+    });
+  }, [groupId, loadPageMeta]);
+
+  useEffect(() => {
+    if (!groupId || pageLoading || is404 || is403 || pageError) return;
+    queueMicrotask(() => {
+      void loadAnalytics(groupId, startDate, endDate);
+    });
+  }, [groupId, pageLoading, is404, is403, pageError, startDate, endDate, loadAnalytics]);
+
+  // Handler for filter bar changes
+  const handleFilterChange = (filters: {
+    timeRange: TimeRangeOption;
+    startDate: string;
+    endDate: string;
+    payerId: string;
+    splitType: SplitTypeFilter;
+  }) => {
+    setTimeRange(filters.timeRange);
+    setStartDate(filters.startDate);
+    setEndDate(filters.endDate);
+    setPayerId(filters.payerId);
+    setSplitType(filters.splitType);
+  };
+
+  const handleResetFilters = () => {
+    setTimeRange('ALL');
+    setStartDate('');
+    setEndDate('');
+    setPayerId('');
+    setSplitType('ALL');
+  };
+
+  // CSV Export
+  const handleExportCsv = async () => {
+    if (!groupId) return;
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const blob = await exportGroupExpensesCsv(groupId, {
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+      });
+      const csvText = await blob.text();
+      const transformedCsv = transformCsvPaidBy(csvText, memberPrefixNames, memberNames);
+      const newBlob = new Blob([transformedCsv], {
+        type: blob.type || 'text/csv;charset=utf-8;',
+      });
+      const url = window.URL.createObjectURL(newBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `expenses-${group?.name ? group.name.replace(/\s+/g, '_') : groupId}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(getErrorMessage(err));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Print friendly handler
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Filter member spending list if a specific payer is selected
+  const filteredMemberSpending: MemberSpendingSummary[] = useMemo(() => {
+    if (!analytics?.memberSpending) return [];
+    if (!payerId) return analytics.memberSpending;
+    return analytics.memberSpending.filter((m) => m.userId === payerId);
+  }, [analytics, payerId]);
+
+  // Render guards
+  if (pageLoading) {
+    return <LoadingState label="Loading report data…" height="lg" />;
+  }
+
+  if (is404) {
+    return (
+      <EmptyState
+        icon="🔍"
+        heading="Group not found"
+        description="This group may have been deleted or you followed a bad link."
+        action={<Link to="/groups" className="btn btn--primary">Back to My Groups</Link>}
+      />
+    );
+  }
+
+  if (is403) {
+    return (
+      <EmptyState
+        icon="🔒"
+        heading="You can't view reports for this group"
+        description="You must be a member of this group to view reports & analytics."
+        action={<Link to="/groups" className="btn btn--primary">Back to My Groups</Link>}
+      />
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div className="alert alert--error groups-page__alert" role="alert">
+        <span>{pageError}</span>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => groupId && loadPageMeta(groupId)}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (!group) return null;
+
+  return (
+    <div className="group-details-page report-page">
+      {/* Header */}
+      <header className="page-header page-header--report">
+        <div className="page-header__title">
+          <nav aria-label="Breadcrumb" className="group-details-breadcrumb">
+            <Link to="/groups">My Groups</Link>
+            <span aria-hidden="true"> / </span>
+            <Link to={`/groups/${groupId}`}>{group.name}</Link>
+            <span aria-hidden="true"> / </span>
+            <span>Reports & Analytics</span>
+          </nav>
+          <div className="group-details-title-row">
+            <h2 className="page-header__heading">📊 Reports & Analytics</h2>
+          </div>
+          <p className="group-details-meta">
+            {group.name} · Real-time financial insights
+          </p>
+        </div>
+
+        <div className="report-header-actions no-print">
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={handlePrint}
+            title="Print or save as PDF"
+            aria-label="Print Report"
+          >
+            🖨️ Print / PDF
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary btn--sm"
+            onClick={handleExportCsv}
+            disabled={isExporting || analyticsLoading}
+            aria-label="Export expenses to CSV"
+          >
+            {isExporting ? 'Exporting…' : '📥 Export CSV'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => groupId && loadAnalytics(groupId, startDate, endDate)}
+            disabled={analyticsLoading}
+            aria-label="Refresh report"
+          >
+            {analyticsLoading ? 'Refreshing…' : '↻ Refresh'}
+          </button>
+        </div>
+      </header>
+
+      {/* CSV Export error alert */}
+      {exportError && (
+        <div className="alert alert--error groups-page__alert no-print" role="alert">
+          <span>Failed to export CSV: {exportError}</span>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => setExportError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Filter toolbar */}
+      <section className="group-details-section report-filter-section no-print" aria-label="Report Filters">
+        <ReportFilters
+          timeRange={timeRange}
+          startDate={startDate}
+          endDate={endDate}
+          payerId={payerId}
+          splitType={splitType}
+          members={members}
+          memberNames={memberNames}
+          isLoading={analyticsLoading}
+          onFilterChange={handleFilterChange}
+          onReset={handleResetFilters}
+        />
+      </section>
+
+      {/* Analytics Error */}
+      {analyticsError && (
+        <div className="alert alert--error groups-page__alert" role="alert">
+          <span>{analyticsError}</span>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => groupId && loadAnalytics(groupId, startDate, endDate)}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* 1. Financial Overview Section */}
+      <section className="group-details-section" aria-label="Financial Overview">
+        <div className="page-header page-header--section">
+          <h3 className="page-header__heading page-header__heading--sm">
+            Financial Overview
+          </h3>
+          <p className="page-header__sub">Key financial metrics for the selected timeframe</p>
+        </div>
+
+        <SpendingOverviewCards
+          totalSpending={Number(analytics?.totalSpending ?? 0)}
+          expenseCount={analytics?.expenseCount ?? 0}
+          averageExpense={Number(analytics?.averageExpense ?? 0)}
+          totalSettledVolume={Number(analytics?.totalSettledVolume ?? 0)}
+          isLoading={analyticsLoading}
+        />
+      </section>
+
+      {/* 2. Member Spending Section */}
+      <section className="group-details-section" aria-label="Member Spending Breakdown">
+        <div className="page-header page-header--section">
+          <h3 className="page-header__heading page-header__heading--sm">
+            Member Spending & Consumption
+          </h3>
+          <p className="page-header__sub">
+            Comparison between money paid out versus share consumed by each member
+          </p>
+        </div>
+
+        {analyticsLoading ? (
+          <LoadingState label="Computing member spending…" height="sm" />
+        ) : (
+          <MemberSpendingBar
+            memberSpending={filteredMemberSpending}
+            memberNames={memberNames}
+            currentUserId={user?.id ?? null}
+          />
+        )}
+      </section>
+
+      {/* 3. Monthly Spending Timeline Section */}
+      <section className="group-details-section" aria-label="Monthly Spending Trends">
+        <div className="page-header page-header--section">
+          <h3 className="page-header__heading page-header__heading--sm">
+            Monthly Spending Trends
+          </h3>
+          <p className="page-header__sub">Expense volume grouped strictly by record creation date</p>
+        </div>
+
+        {analyticsLoading ? (
+          <LoadingState label="Computing monthly timeline…" height="sm" />
+        ) : (
+          <MonthlyTrendChart monthlyTrends={analytics?.monthlyTrends ?? []} />
+        )}
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.1</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.hishob</groupId>
+    <artifactId>hishob</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>HISHOB</name>
+    <description>Free shared expense management platform</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <modules>
+        <module>infrastructure/discovery-server</module>
+        <module>infrastructure/config-server</module>
+        <module>gateway/api-gateway</module>
+        <module>services/auth-service</module>
+        <module>services/group-service</module>
+        <module>services/expense-service</module>
+        <module>services/balance-service</module>
+        <module>services/settlement-service</module>
+        <module>services/notification-service</module>
+    </modules>
+
+    <!--
+        All services are now implemented.
+
+        Available modules:
+            infrastructure/discovery-server  - Service discovery (Eureka)
+            infrastructure/config-server     - Centralized configuration
+            gateway/api-gateway             - API Gateway
+            services/auth-service           - Authentication & JWT
+            services/group-service          - Group management
+            services/expense-service        - Expense tracking
+            services/balance-service        - Balance calculation
+            services/settlement-service     - Settlement management
+            services/notification-service   - Notification system
+    -->
+
+</project>

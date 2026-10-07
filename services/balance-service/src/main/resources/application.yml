@@ -1,0 +1,34 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: balance-service
+  config:
+    import: "optional:configserver:http://localhost:8888"
+
+eureka:
+  client:
+    register-with-eureka: true
+    fetch-registry: true
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+jwt:
+  secret: ${JWT_SECRET:d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026}
+
+hishob:
+  group-service:
+    base-url: ${GROUP_SERVICE_URL:http://localhost:8082}
+    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+  expense-service:
+    base-url: ${EXPENSE_SERVICE_URL:http://localhost:8083}
+    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+  auth-service:
+    base-url: ${AUTH_SERVICE_URL:http://localhost:8081}
+    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+  settlement-service:
+    base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
+    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+  internal:
+    token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}

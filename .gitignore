@@ -1,0 +1,65 @@
+# ========================================
+# HISHOB — Root .gitignore
+# ========================================
+
+# ---------- Maven ----------
+target/
+**/target/
+!.mvn/wrapper/maven-wrapper.jar
+*.jar
+!**/src/**/target/
+
+# ---------- IDE — IntelliJ IDEA ----------
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ---------- IDE — VS Code ----------
+.vscode/
+
+# ---------- IDE — Eclipse / STS ----------
+.classpath
+.project
+.settings/
+.factorypath
+.apt_generated
+.springBeans
+.sts4-cache
+
+# ---------- IDE — NetBeans ----------
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# ---------- Environment / Secrets ----------
+.env
+.env.*
+!.env.example
+
+# ---------- Node.js / Frontend ----------
+node_modules/
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# ---------- Logs ----------
+logs/
+*.log
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---------- Docker ----------
+docker-compose.override.yml
+
+# ---------- Misc ----------
+*.swp
+*.swo
+*~

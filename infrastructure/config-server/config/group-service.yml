@@ -1,0 +1,4 @@
+# Externalized Configuration for HISHOB Group Service
+hishob:
+  group-service:
+    default-role-on-add: MEMBER
