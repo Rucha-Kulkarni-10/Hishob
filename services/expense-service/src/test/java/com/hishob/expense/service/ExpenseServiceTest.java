@@ -10,6 +10,7 @@ import com.hishob.expense.dto.ExpenseResponse;
 import com.hishob.expense.dto.ExpenseSplitRequest;
 import com.hishob.expense.dto.UpdatePersonalExpenseRequest;
 import com.hishob.expense.entity.Expense;
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
 import com.hishob.expense.entity.SplitType;
 import com.hishob.expense.exception.InvalidGroupException;
@@ -573,5 +574,129 @@ class ExpenseServiceTest {
         assertThatThrownBy(() -> expenseService.updatePersonalExpense(expenseId, updateReq, otherUserId))
                 .isInstanceOf(PermissionDeniedException.class)
                 .hasMessageContaining("Only the expense creator can update");
+    }
+
+    @Test
+    @DisplayName("Create group expense saves specified category")
+    void testCreateGroupExpense_WithCategory() {
+        CreateExpenseRequest req = new CreateExpenseRequest(
+                groupId, "Team Lunch", new BigDecimal("100.00"), payerId, SplitType.EQUAL,
+                List.of(new ExpenseSplitRequest(payerId, null, null), new ExpenseSplitRequest(otherUserId, null, null)),
+                ExpenseCategory.FOOD
+        );
+
+        ExpenseSplit split1 = new ExpenseSplit(payerId, new BigDecimal("50.00"), SplitType.EQUAL, null);
+        ExpenseSplit split2 = new ExpenseSplit(otherUserId, new BigDecimal("50.00"), SplitType.EQUAL, null);
+
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, creatorId, "Creator");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Payer");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Participant");
+        doNothing().when(groupServiceClient).validateMember(groupId, otherUserId, "Participant");
+        doNothing().when(splitCalculationService).validateNoDuplicateUsers(any());
+        when(splitCalculationService.calculateEqualSplits(any(), any())).thenReturn(List.of(split1, split2));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(invocation -> {
+            Expense e = invocation.getArgument(0);
+            e.setId(UUID.randomUUID());
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+
+        ExpenseResponse resp = expenseService.createExpense(req, creatorId);
+
+        assertThat(resp.getCategory()).isEqualTo(ExpenseCategory.FOOD);
+        verify(expenseRepository).save(argThat(e -> e.getCategory() == ExpenseCategory.FOOD));
+    }
+
+    @Test
+    @DisplayName("Create group expense with missing category defaults to OTHER")
+    void testCreateGroupExpense_DefaultCategory() {
+        CreateExpenseRequest req = new CreateExpenseRequest(
+                groupId, "Misc item", new BigDecimal("100.00"), payerId, SplitType.EQUAL,
+                List.of(new ExpenseSplitRequest(payerId, null, null)),
+                null
+        );
+
+        ExpenseSplit split1 = new ExpenseSplit(payerId, new BigDecimal("100.00"), SplitType.EQUAL, null);
+
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, creatorId, "Creator");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Payer");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Participant");
+        doNothing().when(splitCalculationService).validateNoDuplicateUsers(any());
+        when(splitCalculationService.calculateEqualSplits(any(), any())).thenReturn(List.of(split1));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(invocation -> {
+            Expense e = invocation.getArgument(0);
+            e.setId(UUID.randomUUID());
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+
+        ExpenseResponse resp = expenseService.createExpense(req, creatorId);
+
+        assertThat(resp.getCategory()).isEqualTo(ExpenseCategory.OTHER);
+    }
+
+    @Test
+    @DisplayName("Create personal expense saves specified category")
+    void testCreatePersonalExpense_WithCategory() {
+        CreatePersonalExpenseRequest req = new CreatePersonalExpenseRequest(
+                "Flight tickets", new BigDecimal("5000.00"), creatorId, SplitType.EQUAL,
+                List.of(new ExpenseSplitRequest(creatorId, null, null), new ExpenseSplitRequest(otherUserId, null, null)),
+                ExpenseCategory.TRAVEL
+        );
+
+        ExpenseSplit split1 = new ExpenseSplit(creatorId, new BigDecimal("2500.00"), SplitType.EQUAL, null);
+        ExpenseSplit split2 = new ExpenseSplit(otherUserId, new BigDecimal("2500.00"), SplitType.EQUAL, null);
+
+        doNothing().when(authServiceClient).validateAcceptedFriendships(eq(creatorId), any());
+        doNothing().when(splitCalculationService).validateNoDuplicateUsers(any());
+        when(splitCalculationService.calculateEqualSplits(any(), any())).thenReturn(List.of(split1, split2));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(invocation -> {
+            Expense e = invocation.getArgument(0);
+            e.setId(UUID.randomUUID());
+            e.setCreatedAt(Instant.now());
+            e.setUpdatedAt(Instant.now());
+            return e;
+        });
+
+        ExpenseResponse resp = expenseService.createPersonalExpense(req, creatorId);
+
+        assertThat(resp.getCategory()).isEqualTo(ExpenseCategory.TRAVEL);
+        verify(expenseRepository).save(argThat(e -> e.getCategory() == ExpenseCategory.TRAVEL));
+    }
+
+    @Test
+    @DisplayName("Update expense category is saved correctly")
+    void testUpdateExpense_Category() {
+        UUID expenseId = UUID.randomUUID();
+        Expense existing = new Expense(groupId, "Original", new BigDecimal("100.00"), payerId, creatorId, SplitType.EQUAL);
+        existing.setId(expenseId);
+        existing.setCategory(ExpenseCategory.OTHER);
+        existing.setCreatedAt(Instant.now());
+        existing.setUpdatedAt(Instant.now());
+
+        CreateExpenseRequest updateReq = new CreateExpenseRequest(
+                groupId, "Updated groceries", new BigDecimal("100.00"), payerId, SplitType.EQUAL,
+                List.of(new ExpenseSplitRequest(payerId, null, null)),
+                ExpenseCategory.GROCERIES
+        );
+
+        ExpenseSplit split1 = new ExpenseSplit(payerId, new BigDecimal("100.00"), SplitType.EQUAL, null);
+
+        when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(existing));
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, creatorId, "Creator");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Payer");
+        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Participant");
+        doNothing().when(splitCalculationService).validateNoDuplicateUsers(any());
+        when(splitCalculationService.calculateEqualSplits(any(), any())).thenReturn(List.of(split1));
+        when(expenseRepository.save(any(Expense.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ExpenseResponse resp = expenseService.updateExpense(expenseId, updateReq, creatorId);
+
+        assertThat(resp.getCategory()).isEqualTo(ExpenseCategory.GROCERIES);
     }
 }

@@ -47,6 +47,18 @@ function formatAmount(amount: number): string {
   });
 }
 
+const UNKNOWN_MEMBER = 'Unknown member' as const;
+
+function buildSafeMemberNames(map: Record<string, string>): Record<string, string> {
+  return new Proxy(map, {
+    get(target, prop): string {
+      if (typeof prop !== 'string') return UNKNOWN_MEMBER;
+      const value = target[prop];
+      return typeof value === 'string' && value.trim().length > 0 ? value : UNKNOWN_MEMBER;
+    },
+  });
+}
+
 export default function FriendDetailPage() {
   const { friendId } = useParams<{ friendId: string }>();
   const { user } = useAuth();
@@ -91,7 +103,7 @@ export default function FriendDetailPage() {
     friends.forEach((f) => {
       map[f.userId] = displayName(f.name);
     });
-    return map;
+    return buildSafeMemberNames(map);
   }, [user, friend, friends]);
 
   const reload = useCallback(async () => {
@@ -238,9 +250,33 @@ export default function FriendDetailPage() {
   }
 
   const friendName = displayName(friend.name);
-  const userOwesFriend = balance?.currentUserStatus === 'OWES' && (balance.amount > 0 || balance.currentUserNetBalance < 0);
-  const friendOwesUser = balance?.currentUserStatus === 'GETS' && (balance.amount > 0 || balance.currentUserNetBalance > 0);
-  const balanceAmount = balance ? balance.amount || Math.abs(balance.currentUserNetBalance) : 0;
+
+  const balanceHasDebt = Boolean(
+    balance &&
+      balance.fromUserId &&
+      balance.toUserId &&
+      typeof balance.amount === 'number' &&
+      balance.amount > 0
+  );
+
+  const userOwesFriend = Boolean(
+    balanceHasDebt &&
+      user &&
+      balance!.fromUserId === user.id &&
+      balance!.toUserId === friend.userId
+  );
+
+  const friendOwesUser = Boolean(
+    balanceHasDebt &&
+      user &&
+      balance!.fromUserId === friend.userId &&
+      balance!.toUserId === user.id
+  );
+
+  const balanceAmount: number =
+    balanceHasDebt && balance ? Math.max(0, balance.amount) : 0;
+
+  const canSettleUp = Boolean(user && userOwesFriend && balance?.fromUserId && balance?.toUserId);
 
   return (
     <div className="friend-detail-page">
@@ -279,7 +315,7 @@ export default function FriendDetailPage() {
           >
             + Add Expense
           </button>
-          {userOwesFriend && (
+          {canSettleUp && (
             <button
               type="button"
               className="btn btn--secondary"
@@ -407,7 +443,7 @@ export default function FriendDetailPage() {
                   </p>
                 </div>
 
-                {userOwesFriend && (
+                {canSettleUp && (
                   <button
                     type="button"
                     className="btn btn--primary"
@@ -530,6 +566,7 @@ export default function FriendDetailPage() {
           onClose={() => setAddOpen(false)}
           onCreated={handleExpenseCreated}
           preselectedFriendId={friend.userId}
+          initialFriends={friends}
         />
       )}
 
@@ -560,17 +597,18 @@ export default function FriendDetailPage() {
           expense={editExpense}
           currentUserId={user?.id ?? null}
           onUpdated={handleExpenseUpdated}
+          initialFriends={friends}
         />
       )}
 
       {/* Settle Up Modal */}
-      {settleOpen && user && (
+      {settleOpen && canSettleUp && user && balance?.fromUserId && balance?.toUserId && (
         <ConfirmPersonalSettlementModal
           isOpen={settleOpen}
           onClose={() => setSettleOpen(false)}
           suggestion={{
-            fromUserId: user.id,
-            toUserId: friend.userId,
+            fromUserId: balance.fromUserId,
+            toUserId: balance.toUserId,
             amount: balanceAmount,
           }}
           toUserName={friendName}

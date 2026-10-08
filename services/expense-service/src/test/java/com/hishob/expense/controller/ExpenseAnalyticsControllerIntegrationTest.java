@@ -157,7 +157,7 @@ class ExpenseAnalyticsControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "text/csv; charset=UTF-8"))
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"expenses-" + groupId + ".csv\""))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Date,Description,Total Amount (INR),Paid By,Split Type,Participants Count")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"Supplies\",75.00")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"Supplies\",\"Other\",75.00")));
     }
 }

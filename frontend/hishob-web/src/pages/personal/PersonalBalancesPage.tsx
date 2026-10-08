@@ -4,16 +4,17 @@
  * Route: /balances
  *
  * Features:
- *   - Overall Personal Balance Summary: You owe, You are owed, Net balance
- *   - Per-Friend Balances Breakdown (Total Paid, Total Share, Net, Status)
- *   - Debt Simplification suggestions via GET /api/personal-balances/simplify
- *   - Settle Up action (only when current user is debtor) via ConfirmPersonalSettlementModal
- *   - Settlement History tab/view via GET /api/personal-settlements/history
- *   - All UUIDs converted to user/friend names
- *   - Full loading, empty, and error handling
+ *   - Authoritative Personal Balance Summary: Derived strictly from current user's balance entry
+ *   - Friend Balance Cards: Name, avatar/initial, clear debt direction, metadata, and direct Settle Up
+ *   - Automatic Debt Simplification: Suggestions fetched automatically on page load
+ *   - Settle Up action: Debtor-only settlement flow via ConfirmPersonalSettlementModal
+ *   - Settlement History tab via GET /api/personal-settlements/history
+ *   - Strict safe name resolution (no raw UUIDs, truncated IDs, or fake names)
+ *   - Clean empty, loading, error, and settled states
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { getPersonalBalances, getSimplification } from '@/services/personalBalanceService';
 import { getPersonalSettlementHistory } from '@/services/personalSettlementService';
@@ -30,11 +31,34 @@ import EmptyState from '@/components/common/EmptyState';
 import ConfirmPersonalSettlementModal from '@/components/personal/ConfirmPersonalSettlementModal';
 import PersonalSettlementHistory from '@/components/personal/PersonalSettlementHistory';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function formatAmount(amount: number): string {
   return Math.abs(amount).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function resolveMemberName(
+  userId: string | undefined | null,
+  currentUserId: string | undefined | null,
+  friendsList: Friend[]
+): string {
+  if (!userId) return 'Unknown member';
+  if (currentUserId && userId === currentUserId) {
+    return 'You';
+  }
+  const friend = friendsList.find((f) => f.userId === userId);
+  if (friend) {
+    if (friend.name && friend.name.trim() && !UUID_REGEX.test(friend.name.trim())) {
+      return friend.name.trim();
+    }
+    if (friend.email && friend.email.trim()) {
+      return friend.email.trim();
+    }
+  }
+  return 'Unknown member';
 }
 
 export default function PersonalBalancesPage() {
@@ -63,7 +87,10 @@ export default function PersonalBalancesPage() {
       map[user.id] = user.name ? `${user.name} (You)` : 'You';
     }
     friends.forEach((f) => {
-      map[f.userId] = f.name || f.email || 'Friend';
+      const name = (f.name && f.name.trim() && !UUID_REGEX.test(f.name.trim()))
+        ? f.name.trim()
+        : (f.email && f.email.trim() ? f.email.trim() : 'Unknown member');
+      map[f.userId] = name;
     });
     return map;
   }, [user, friends]);
@@ -72,15 +99,18 @@ export default function PersonalBalancesPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const [balanceData, friendsData, historyData] = await Promise.all([
+      const [balanceData, friendsData, historyData, simplifyData] = await Promise.all([
         getPersonalBalances(),
         getFriends().catch(() => [] as Friend[]),
         getPersonalSettlementHistory().catch(() => [] as PersonalSettlementHistoryResponse[]),
+        getSimplification().catch(() => ({ suggestions: [] })),
       ]);
 
       setBalances(balanceData.balances || []);
       setFriends(friendsData);
       setSettlementHistory(historyData || []);
+      setSuggestions(simplifyData.suggestions || []);
+      setHasLoadedSimplification(true);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -108,31 +138,35 @@ export default function PersonalBalancesPage() {
     });
   }, [loadData]);
 
-  // Summary aggregation
-  const { totalOwed, totalGets, netBalance } = useMemo(() => {
-    let owed = 0;
-    let gets = 0;
-
-    balances.forEach((b) => {
-      if (b.netBalance < 0) {
-        owed += Math.abs(b.netBalance);
-      } else if (b.netBalance > 0) {
-        gets += b.netBalance;
-      }
-    });
+  // Authoritative Personal Balance Summary derived from current user's balance entry
+  const { youOwe, youAreOwed, netBalance } = useMemo(() => {
+    const myEntry = balances.find((b) => b.userId === user?.id);
+    const myNet = myEntry?.netBalance ?? 0;
 
     return {
-      totalOwed: owed,
-      totalGets: gets,
-      netBalance: gets - owed,
+      youOwe: myNet < 0 ? Math.abs(myNet) : 0,
+      youAreOwed: myNet > 0 ? myNet : 0,
+      netBalance: myNet,
     };
-  }, [balances]);
+  }, [balances, user?.id]);
+
+  // Friend-wise balance list (all participants except current user)
+  const friendBalances = useMemo(() => {
+    return balances.filter((b) => b.userId !== user?.id);
+  }, [balances, user?.id]);
+
+  // Direct Settle Up handler from friend card
+  const handleSettleFriend = (friendBalance: PersonalBalanceResponse) => {
+    if (!user?.id || !friendBalance.userId || friendBalance.netBalance <= 0) return;
+    setSelectedSuggestion({
+      fromUserId: user.id,
+      toUserId: friendBalance.userId,
+      amount: friendBalance.netBalance,
+    });
+  };
 
   const handleSettlementSuccess = () => {
     void loadData();
-    if (hasLoadedSimplification) {
-      void loadSimplification();
-    }
     setSelectedSuggestion(null);
   };
 
@@ -146,7 +180,7 @@ export default function PersonalBalancesPage() {
             <span className="badge badge--primary">Personal</span>
           </div>
           <p className="page-header__sub">
-            Overview of who owes whom across all your personal expenses and settlements.
+            Overview of who owes whom across all your 1-on-1 personal expenses and settlements.
           </p>
         </div>
 
@@ -158,7 +192,7 @@ export default function PersonalBalancesPage() {
             disabled={isSimplifying}
             aria-busy={isSimplifying}
           >
-            {isSimplifying ? 'Simplifying…' : 'Simplify Debts'}
+            {isSimplifying ? 'Simplifying…' : 'Refresh Simplification'}
           </button>
         </div>
       </header>
@@ -210,15 +244,15 @@ export default function PersonalBalancesPage() {
             <div className="balance-cards-grid">
               <div className="balance-card">
                 <span className="balance-card__label">You owe</span>
-                <span className={`balance-card__amount ${totalOwed > 0 ? 'balance-card__amount--owe' : ''}`}>
-                  ₹{formatAmount(totalOwed)}
+                <span className={`balance-card__amount ${youOwe > 0 ? 'balance-card__amount--owe' : ''}`}>
+                  ₹{formatAmount(youOwe)}
                 </span>
                 <span className="balance-card__hint">Total amount you need to pay back</span>
               </div>
               <div className="balance-card">
                 <span className="balance-card__label">You are owed</span>
-                <span className={`balance-card__amount ${totalGets > 0 ? 'balance-card__amount--gets' : ''}`}>
-                  ₹{formatAmount(totalGets)}
+                <span className={`balance-card__amount ${youAreOwed > 0 ? 'balance-card__amount--gets' : ''}`}>
+                  ₹{formatAmount(youAreOwed)}
                 </span>
                 <span className="balance-card__hint">Total amount friends need to pay you</span>
               </div>
@@ -235,21 +269,143 @@ export default function PersonalBalancesPage() {
                 >
                   {netBalance > 0 ? `+₹${formatAmount(netBalance)}` : netBalance < 0 ? `-₹${formatAmount(netBalance)}` : '₹0.00'}
                 </span>
-                <span className="balance-card__hint">Your overall financial standing</span>
+                <span className="balance-card__hint">
+                  {netBalance === 0 ? 'All personal balances are settled up' : 'Your overall financial standing'}
+                </span>
               </div>
             </div>
           </section>
 
-          {/* Debt Simplification Suggestions */}
+          {/* Friend Balance Cards Section */}
+          <section className="group-details-section" aria-labelledby="friend-balances-heading" style={{ marginTop: '1.5rem' }}>
+            <div className="page-header page-header--section">
+              <div className="page-header__title">
+                <h3 id="friend-balances-heading" className="page-header__heading page-header__heading--sm">
+                  Friend Balances
+                </h3>
+                <p className="page-header__sub">Individual standing with each friend</p>
+              </div>
+            </div>
+
+            {friendBalances.length === 0 ? (
+              <EmptyState
+                icon="🤝"
+                heading="No personal balances"
+                description="You have no outstanding balances with your friends."
+              />
+            ) : (
+              <div className="friend-balance-cards-grid">
+                {friendBalances.map((item) => {
+                  const friendName = resolveMemberName(item.userId, user?.id, friends);
+                  const initial = (friendName.charAt(0) || '?').toUpperCase();
+                  
+                  // In personal balance calculation:
+                  // item.netBalance > 0 means the friend is a creditor -> current user owes friend item.netBalance
+                  // item.netBalance < 0 means the friend is a debtor -> friend owes current user Math.abs(item.netBalance)
+                  // item.netBalance === 0 means settled up
+                  const userOwesFriend = item.netBalance > 0;
+                  const friendOwesUser = item.netBalance < 0;
+                  const isSettled = item.netBalance === 0;
+
+                  return (
+                    <div
+                      key={item.userId}
+                      className={`friend-balance-card ${
+                        userOwesFriend
+                          ? 'friend-balance-card--owes'
+                          : friendOwesUser
+                          ? 'friend-balance-card--gets'
+                          : 'friend-balance-card--settled'
+                      }`}
+                    >
+                      {/* Card Top: Avatar, Name & Direction Status */}
+                      <div className="friend-balance-card__header">
+                        <div className="friend-balance-card__user">
+                          <div className="friend-balance-card__avatar" aria-hidden="true">
+                            {initial}
+                          </div>
+                          <div className="friend-balance-card__info">
+                            <h4 className="friend-balance-card__name">{friendName}</h4>
+                            <div className="friend-balance-card__direction">
+                              {userOwesFriend && (
+                                <span className="friend-balance-card__direction-text friend-balance-card__direction-text--owes">
+                                  You owe ₹{formatAmount(item.netBalance)}
+                                </span>
+                              )}
+                              {friendOwesUser && (
+                                <span className="friend-balance-card__direction-text friend-balance-card__direction-text--gets">
+                                  {friendName} owes you ₹{formatAmount(item.netBalance)}
+                                </span>
+                              )}
+                              {isSettled && (
+                                <span className="friend-balance-card__direction-text friend-balance-card__direction-text--settled">
+                                  Settled up
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="friend-balance-card__badge-wrapper">
+                          {userOwesFriend && (
+                            <span className="badge badge--danger">You owe</span>
+                          )}
+                          {friendOwesUser && (
+                            <span className="badge badge--success">Owes you</span>
+                          )}
+                          {isSettled && (
+                            <span className="badge badge--muted">Settled</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Meta: Total Paid & Total Share */}
+                      <div className="friend-balance-card__meta-grid">
+                        <div className="friend-balance-card__meta-item">
+                          <span className="friend-balance-card__meta-label">Paid</span>
+                          <span className="friend-balance-card__meta-value">₹{formatAmount(item.totalPaid)}</span>
+                        </div>
+                        <div className="friend-balance-card__meta-item">
+                          <span className="friend-balance-card__meta-label">Share</span>
+                          <span className="friend-balance-card__meta-value">₹{formatAmount(item.totalShare)}</span>
+                        </div>
+                      </div>
+
+                      {/* Card Actions: Settle Up (Debtor only) & View Details */}
+                      <div className="friend-balance-card__actions">
+                        <Link
+                          to={`/friends/${item.userId}`}
+                          className="btn btn--ghost btn--sm friend-balance-card__link"
+                        >
+                          View Details
+                        </Link>
+                        {userOwesFriend && (
+                          <button
+                            type="button"
+                            className="btn btn--primary btn--sm"
+                            onClick={() => handleSettleFriend(item)}
+                          >
+                            Settle Up
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Debt Simplification Suggestions Section */}
           {hasLoadedSimplification && (
-            <section className="group-details-section" aria-labelledby="simplification-heading" style={{ marginTop: '1.5rem' }}>
+            <section className="group-details-section" aria-labelledby="simplification-heading" style={{ marginTop: '2rem' }}>
               <div className="page-header page-header--section">
                 <div className="page-header__title">
                   <h3 id="simplification-heading" className="page-header__heading page-header__heading--sm">
-                    Debt Simplification Suggestions
+                    Debt Simplification
                   </h3>
                   <p className="page-header__sub">
-                    Optimized settlement paths to settle all debts with minimum transactions.
+                    Recommended payments that reduce the total number of transactions needed to settle all debts.
                   </p>
                 </div>
               </div>
@@ -262,7 +418,7 @@ export default function PersonalBalancesPage() {
 
               {suggestions.length === 0 ? (
                 <div className="alert alert--success" role="status">
-                  ✓ You're all settled up! No simplified transactions are needed.
+                  ✓ All personal debts are settled. No simplified transactions are needed.
                 </div>
               ) : (
                 <div className="settlement-suggestions-list" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -270,48 +426,51 @@ export default function PersonalBalancesPage() {
                     const fromIsMe = user ? suggestion.fromUserId === user.id : false;
                     const toIsMe = user ? suggestion.toUserId === user.id : false;
 
-                    const fromName = fromIsMe ? 'You' : memberNames[suggestion.fromUserId] || 'Friend';
-                    const toName = toIsMe ? 'You' : memberNames[suggestion.toUserId] || 'Friend';
+                    const fromName = resolveMemberName(suggestion.fromUserId, user?.id, friends);
+                    const toName = resolveMemberName(suggestion.toUserId, user?.id, friends);
 
                     return (
                       <div
                         key={`${suggestion.fromUserId}-${suggestion.toUserId}-${idx}`}
                         className={`settlement-suggestion-card ${fromIsMe ? 'settlement-suggestion-card--owes' : ''}`}
-                        style={{
-                          background: 'var(--color-surface)',
-                          border: '1px solid var(--color-border)',
-                          borderRadius: 'var(--radius-lg)',
-                          padding: '1rem 1.25rem',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          flexWrap: 'wrap',
-                          gap: '1rem',
-                        }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <span style={{ fontWeight: 600 }}>{fromName}</span>
-                          <span style={{ color: 'var(--color-text-muted)' }} aria-hidden="true">→</span>
-                          <span style={{ fontWeight: 600 }}>{toName}</span>
-                          <span style={{ fontWeight: 700, color: 'var(--color-primary)', marginLeft: '0.5rem' }}>
+                        <div className="settlement-suggestion-card__main">
+                          <div className="settlement-suggestion-card__direction">
+                            {fromIsMe ? (
+                              <span>
+                                <strong>You</strong> pay <strong>{toName}</strong>
+                              </span>
+                            ) : toIsMe ? (
+                              <span>
+                                <strong>{fromName}</strong> pays <strong>you</strong>
+                              </span>
+                            ) : (
+                              <span>
+                                <strong>{fromName}</strong> pays <strong>{toName}</strong>
+                              </span>
+                            )}
+                          </div>
+                          <span className="settlement-suggestion-card__amount">
                             ₹{formatAmount(suggestion.amount)}
                           </span>
                         </div>
 
-                        {/* Only show Settle Up if currentUser === fromUserId */}
-                        {fromIsMe ? (
-                          <button
-                            type="button"
-                            className="btn btn--primary btn--sm"
-                            onClick={() => setSelectedSuggestion(suggestion)}
-                          >
-                            Settle Up ₹{formatAmount(suggestion.amount)}
-                          </button>
-                        ) : (
-                          <span className="badge badge--muted">
-                            {toIsMe ? 'Waiting for payment' : 'Pending'}
-                          </span>
-                        )}
+                        {/* Only show Settle Up if currentUser is debtor (fromUserId) */}
+                        <div className="settlement-suggestion-card__action">
+                          {fromIsMe ? (
+                            <button
+                              type="button"
+                              className="btn btn--primary btn--sm"
+                              onClick={() => setSelectedSuggestion(suggestion)}
+                            >
+                              Settle Up ₹{formatAmount(suggestion.amount)}
+                            </button>
+                          ) : (
+                            <span className="badge badge--muted">
+                              {toIsMe ? 'Waiting for payment' : 'Pending'}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -319,67 +478,6 @@ export default function PersonalBalancesPage() {
               )}
             </section>
           )}
-
-          {/* People Balances List */}
-          <section className="group-details-section" aria-labelledby="people-balances-heading" style={{ marginTop: '1.5rem' }}>
-            <div className="page-header page-header--section">
-              <div className="page-header__title">
-                <h3 id="people-balances-heading" className="page-header__heading page-header__heading--sm">
-                  Balances by Person
-                </h3>
-                <p className="page-header__sub">Individual standing with each participant</p>
-              </div>
-            </div>
-
-            {balances.length === 0 ? (
-              <EmptyState
-                icon="🤝"
-                heading="No personal balances"
-                description="You're all settled up with your friends."
-              />
-            ) : (
-              <div className="members-table-wrapper" style={{ overflowX: 'auto' }}>
-                <table className="members-table">
-                  <thead>
-                    <tr>
-                      <th>Person</th>
-                      <th>Total Paid</th>
-                      <th>Total Share</th>
-                      <th>Net Balance</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {balances.map((item) => {
-                      const isMe = user && item.userId === user.id;
-                      const displayName = memberNames[item.userId] || (isMe ? 'You' : 'Friend');
-
-                      let statusBadge = <span className="badge badge--muted">Settled</span>;
-                      if (item.status === 'GETS') {
-                        statusBadge = <span className="badge badge--success">Gets ₹{formatAmount(item.netBalance)}</span>;
-                      } else if (item.status === 'OWES') {
-                        statusBadge = <span className="badge badge--danger">Owes ₹{formatAmount(item.netBalance)}</span>;
-                      }
-
-                      return (
-                        <tr key={item.userId}>
-                          <td>
-                            <strong>{displayName}</strong>
-                          </td>
-                          <td>₹{formatAmount(item.totalPaid)}</td>
-                          <td>₹{formatAmount(item.totalShare)}</td>
-                          <td style={{ fontWeight: 600 }}>
-                            {item.netBalance > 0 ? `+₹${formatAmount(item.netBalance)}` : item.netBalance < 0 ? `-₹${formatAmount(item.netBalance)}` : '₹0.00'}
-                          </td>
-                          <td>{statusBadge}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
         </>
       )}
 
@@ -399,10 +497,11 @@ export default function PersonalBalancesPage() {
           isOpen={!!selectedSuggestion}
           onClose={() => setSelectedSuggestion(null)}
           suggestion={selectedSuggestion}
-          toUserName={memberNames[selectedSuggestion.toUserId] || 'Friend'}
+          toUserName={resolveMemberName(selectedSuggestion.toUserId, user?.id, friends)}
           onSuccess={handleSettlementSuccess}
         />
       )}
     </div>
   );
 }
+

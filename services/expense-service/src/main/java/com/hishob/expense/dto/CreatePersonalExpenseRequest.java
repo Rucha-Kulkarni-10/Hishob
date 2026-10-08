@@ -1,5 +1,6 @@
 package com.hishob.expense.dto;
 
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.SplitType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -28,6 +29,8 @@ public class CreatePersonalExpenseRequest {
     @NotNull(message = "splitType is required")
     private SplitType splitType;
 
+    private ExpenseCategory category;
+
     @NotEmpty(message = "At least one split is required")
     @Valid
     private List<ExpenseSplitRequest> splits;
@@ -38,11 +41,19 @@ public class CreatePersonalExpenseRequest {
     public CreatePersonalExpenseRequest(String description, BigDecimal totalAmount,
                                         UUID paidBy, SplitType splitType,
                                         List<ExpenseSplitRequest> splits) {
+        this(description, totalAmount, paidBy, splitType, splits, ExpenseCategory.OTHER);
+    }
+
+    public CreatePersonalExpenseRequest(String description, BigDecimal totalAmount,
+                                        UUID paidBy, SplitType splitType,
+                                        List<ExpenseSplitRequest> splits,
+                                        ExpenseCategory category) {
         this.description = description;
         this.totalAmount = totalAmount;
         this.paidBy = paidBy;
         this.splitType = splitType;
         this.splits = splits;
+        this.category = category != null ? category : ExpenseCategory.OTHER;
     }
 
     public String getDescription() {
@@ -77,6 +88,14 @@ public class CreatePersonalExpenseRequest {
         this.splitType = splitType;
     }
 
+    public ExpenseCategory getCategory() {
+        return category != null ? category : ExpenseCategory.OTHER;
+    }
+
+    public void setCategory(ExpenseCategory category) {
+        this.category = category != null ? category : ExpenseCategory.OTHER;
+    }
+
     public List<ExpenseSplitRequest> getSplits() {
         return splits;
     }
@@ -85,3 +104,4 @@ public class CreatePersonalExpenseRequest {
         this.splits = splits;
     }
 }
+

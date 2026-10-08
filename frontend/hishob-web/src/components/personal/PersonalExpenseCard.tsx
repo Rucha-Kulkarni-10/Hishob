@@ -4,7 +4,8 @@
  * Shows:
  *   - Description
  *   - Total amount
- *   - Paid by (name resolved from friends/user, never raw UUID)
+ *   - Paid by (resolved name, never raw UUID)
+ *   - Your share when current user is a participant
  *   - Split type badge
  *   - Date
  *   - Participant count
@@ -12,6 +13,7 @@
  */
 
 import type { PersonalExpenseResponse } from '@/types/personalExpenses';
+import { getCategoryMeta } from '@/types/expenses';
 
 interface PersonalExpenseCardProps {
   expense: PersonalExpenseResponse;
@@ -21,6 +23,23 @@ interface PersonalExpenseCardProps {
   onView: (expense: PersonalExpenseResponse) => void;
   onEdit: (expense: PersonalExpenseResponse) => void;
   onDelete: (expense: PersonalExpenseResponse) => void;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function resolveMemberName(
+  userId: string,
+  memberNames: Record<string, string>,
+  currentUserId: string | null
+): string {
+  if (currentUserId && userId === currentUserId) {
+    return 'You';
+  }
+  const resolved = memberNames[userId];
+  if (!resolved || UUID_REGEX.test(resolved.trim())) {
+    return 'Unknown member';
+  }
+  return resolved.trim();
 }
 
 function formatDate(iso: string): string {
@@ -57,8 +76,13 @@ export default function PersonalExpenseCard({
   onDelete,
 }: PersonalExpenseCardProps) {
   const isCreator = currentUserId === expense.createdBy;
-  const payerName = memberNames[expense.paidBy] || 'Unknown member';
+  const isCurrentUserPayer = Boolean(currentUserId && expense.paidBy === currentUserId);
+  const payerName = isCurrentUserPayer
+    ? 'You'
+    : resolveMemberName(expense.paidBy, memberNames, currentUserId);
+  const mySplit = currentUserId ? expense.splits.find((s) => s.userId === currentUserId) : undefined;
   const participantCount = expense.splits.length;
+  const catMeta = getCategoryMeta(expense.category);
 
   return (
     <div className="expense-card" role="article">
@@ -73,9 +97,17 @@ export default function PersonalExpenseCard({
           <span className="expense-card__amount">₹{formatAmount(expense.totalAmount)}</span>
         </div>
         <div className="expense-card__meta-row">
-          <span className="expense-card__meta">
-            Paid by <strong>{payerName}</strong>
+          <span className="expense-card__meta expense-card__payer">
+            {isCurrentUserPayer ? 'You paid' : `${payerName} paid`} <strong>₹{formatAmount(expense.totalAmount)}</strong>
           </span>
+          <span className="badge badge--neutral expense-card__category-badge">
+            {catMeta.icon} {catMeta.label}
+          </span>
+          {mySplit && (
+            <span className="expense-card__meta expense-card__your-share">
+              Your share: <strong>₹{formatAmount(mySplit.amount)}</strong>
+            </span>
+          )}
           <span className="expense-card__meta">
             {participantCount} participant{participantCount !== 1 ? 's' : ''}
           </span>
@@ -84,7 +116,9 @@ export default function PersonalExpenseCard({
           >
             {SPLIT_LABELS[expense.splitType] ?? expense.splitType}
           </span>
-          <span className="expense-card__date">{formatDate(expense.createdAt)}</span>
+          <span className="expense-card__date" title={`Recorded on ${formatDate(expense.createdAt)}`}>
+            {formatDate(expense.createdAt)}
+          </span>
         </div>
       </button>
 

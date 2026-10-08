@@ -28,9 +28,9 @@ import EmptyState from '@/components/common/EmptyState';
 import SpendingOverviewCards from '@/components/reports/SpendingOverviewCards';
 import MemberSpendingBar from '@/components/reports/MemberSpendingBar';
 import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
+import CategorySpendingBreakdown from '@/components/reports/CategorySpendingBreakdown';
 import ReportFilters from '@/components/reports/ReportFilters';
 
-const PAID_BY_COLUMN_INDEX = 3;
 const USER_PREFIX_RE = /^User-([0-9a-fA-F]{8})$/;
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -103,6 +103,7 @@ function transformCsvPaidBy(
   const normalized = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const lines = normalized.split('\n');
   const transformed: string[] = [];
+  let paidByIndex = 4; // Default index for new CSV format with Category
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -111,13 +112,20 @@ function transformCsvPaidBy(
       continue;
     }
     if (i === 0) {
+      const headerFields = parseCsvLine(line);
+      const foundIndex = headerFields.findIndex(
+        (h) => h.trim().toLowerCase() === 'paid by'
+      );
+      if (foundIndex !== -1) {
+        paidByIndex = foundIndex;
+      }
       transformed.push(line);
       continue;
     }
     const fields = parseCsvLine(line);
-    if (fields.length > PAID_BY_COLUMN_INDEX) {
-      fields[PAID_BY_COLUMN_INDEX] = resolvePaidByName(
-        fields[PAID_BY_COLUMN_INDEX],
+    if (fields.length > paidByIndex) {
+      fields[paidByIndex] = resolvePaidByName(
+        fields[paidByIndex],
         prefixToName,
         fullIdToName
       );
@@ -500,6 +508,22 @@ export default function GroupReportsPage() {
           <LoadingState label="Computing monthly timeline…" height="sm" />
         ) : (
           <MonthlyTrendChart monthlyTrends={analytics?.monthlyTrends ?? []} />
+        )}
+      </section>
+
+      {/* 4. Category Spending Breakdown Section */}
+      <section className="group-details-section" aria-label="Category Spending Breakdown">
+        <div className="page-header page-header--section">
+          <h3 className="page-header__heading page-header__heading--sm">
+            Category Spending
+          </h3>
+          <p className="page-header__sub">Breakdown of expenses by category with total volume and percentage</p>
+        </div>
+
+        {analyticsLoading ? (
+          <LoadingState label="Computing category spending…" height="sm" />
+        ) : (
+          <CategorySpendingBreakdown categorySpending={analytics?.categorySpending ?? []} />
         )}
       </section>
     </div>

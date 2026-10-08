@@ -9,7 +9,10 @@
  *   ExpenseResponse.java              → PersonalExpenseResponse
  */
 
+import type { ExpenseCategory } from './expenses';
+
 export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
+export type { ExpenseCategory };
 
 /** One entry in the splits array for Create/Update personal expense */
 export interface PersonalExpenseSplitRequest {
@@ -24,6 +27,7 @@ export interface CreatePersonalExpenseRequest {
   totalAmount: number;         // >= 0.01
   paidBy: string;              // UUID
   splitType: SplitType;
+  category?: ExpenseCategory;
   splits: PersonalExpenseSplitRequest[];
 }
 
@@ -33,6 +37,7 @@ export interface UpdatePersonalExpenseRequest {
   totalAmount: number;         // >= 0.01
   paidBy: string;              // UUID
   splitType: SplitType;
+  category?: ExpenseCategory;
   splits: PersonalExpenseSplitRequest[];
 }
 
@@ -53,6 +58,7 @@ export interface PersonalExpenseResponse {
   paidBy: string;              // UUID
   createdBy: string;           // UUID
   splitType: SplitType;
+  category: ExpenseCategory;
   splits: PersonalExpenseSplitResponse[];
   createdAt: string;           // ISO-8601 Instant
   updatedAt: string;           // ISO-8601 Instant

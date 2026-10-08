@@ -3,10 +3,12 @@ package com.hishob.expense.service;
 import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.client.SettlementServiceClient.CompletedSettlementData;
+import com.hishob.expense.dto.CategorySpendingSummary;
 import com.hishob.expense.dto.GroupAnalyticsResponse;
 import com.hishob.expense.dto.MemberSpendingSummary;
 import com.hishob.expense.dto.MonthlySpendingSummary;
 import com.hishob.expense.entity.Expense;
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
 import com.hishob.expense.entity.SplitType;
 import com.hishob.expense.exception.PermissionDeniedException;
@@ -262,8 +264,9 @@ class ExpenseAnalyticsServiceTest {
 
         String csv = analyticsService.exportExpensesCsv(groupId, user1, null, null);
 
-        assertThat(csv).contains("Date,Description,Total Amount (INR),Paid By,Split Type,Participants Count");
+        assertThat(csv).contains("Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count");
         assertThat(csv).contains("\"Dinner with \"\"special\"\" guest\"");
+        assertThat(csv).contains("\"Other\"");
         assertThat(csv).contains("500.00");
         assertThat(csv).contains("User-" + user1.toString().substring(0, 8));
         assertThat(csv).contains("EQUAL,2");
@@ -300,5 +303,56 @@ class ExpenseAnalyticsServiceTest {
         GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
 
         assertThat(response.getTotalSettledVolume()).isEqualByComparingTo("145.50");
+    }
+
+    @Test
+    @DisplayName("14. Group analytics returns category breakdown with correct amounts and percentages")
+    void testCategorySpendingBreakdown() {
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
+
+        Expense e1 = createTestExpense(UUID.randomUUID(), groupId, "Lunch", new BigDecimal("300.00"), user1, Instant.now(), List.of(
+                new ExpenseSplit(user1, new BigDecimal("300.00"), SplitType.EQUAL, null)
+        ));
+        e1.setCategory(ExpenseCategory.FOOD);
+
+        Expense e2 = createTestExpense(UUID.randomUUID(), groupId, "Cab", new BigDecimal("100.00"), user1, Instant.now(), List.of(
+                new ExpenseSplit(user1, new BigDecimal("100.00"), SplitType.EQUAL, null)
+        ));
+        e2.setCategory(ExpenseCategory.TRAVEL);
+
+        when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(e1, e2));
+
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+
+        assertThat(response.getCategorySpending()).hasSize(2);
+
+        CategorySpendingSummary food = response.getCategorySpending().stream()
+                .filter(c -> c.getCategory() == ExpenseCategory.FOOD).findFirst().orElseThrow();
+        assertThat(food.getTotalAmount()).isEqualByComparingTo("300.00");
+        assertThat(food.getExpenseCount()).isEqualTo(1);
+        assertThat(food.getPercentageOfTotal()).isEqualTo(75.0);
+
+        CategorySpendingSummary travel = response.getCategorySpending().stream()
+                .filter(c -> c.getCategory() == ExpenseCategory.TRAVEL).findFirst().orElseThrow();
+        assertThat(travel.getTotalAmount()).isEqualByComparingTo("100.00");
+        assertThat(travel.getExpenseCount()).isEqualTo(1);
+        assertThat(travel.getPercentageOfTotal()).isEqualTo(25.0);
+    }
+
+    @Test
+    @DisplayName("15. Empty group returns empty category breakdown with zero safe percentage")
+    void testEmptyGroupCategoryBreakdown() {
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
+        when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
+
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+
+        assertThat(response.getCategorySpending()).isEmpty();
     }
 }

@@ -21,7 +21,14 @@
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 import Modal from '@/components/common/Modal';
 import { createExpense } from '@/services/expenseService';
-import type { CreateExpenseRequest, ExpenseResponse, SplitType } from '@/types/expenses';
+import {
+  type CreateExpenseRequest,
+  type ExpenseCategory,
+  EXPENSE_CATEGORIES,
+  CATEGORY_METADATA,
+  type ExpenseResponse,
+  type SplitType,
+} from '@/types/expenses';
 import type { MemberResponse } from '@/types/groups';
 import { getErrorMessage } from '@/utils/errorUtils';
 
@@ -41,6 +48,7 @@ interface ParticipantEntry {
 }
 
 const INITIAL_SPLIT: SplitType = 'EQUAL';
+const INITIAL_CATEGORY: ExpenseCategory = 'OTHER';
 
 function buildInitialParticipants(): ParticipantEntry[] {
   return [];
@@ -57,6 +65,7 @@ export default function AddExpenseModal({
   const [description, setDescription] = useState('');
   const [totalAmount, setTotalAmount] = useState('');
   const [paidBy, setPaidBy] = useState('');
+  const [category, setCategory] = useState<ExpenseCategory>(INITIAL_CATEGORY);
   const [splitType, setSplitType] = useState<SplitType>(INITIAL_SPLIT);
   const [participants, setParticipants] = useState<ParticipantEntry[]>(buildInitialParticipants());
   const [apiError, setApiError] = useState('');
@@ -67,6 +76,7 @@ export default function AddExpenseModal({
     setDescription('');
     setTotalAmount('');
     setPaidBy('');
+    setCategory(INITIAL_CATEGORY);
     setSplitType(INITIAL_SPLIT);
     setParticipants([]);
     setApiError('');
@@ -196,6 +206,7 @@ export default function AddExpenseModal({
       totalAmount: parseFloat(totalAmount),
       paidBy,
       splitType,
+      category,
       splits,
     };
 
@@ -246,6 +257,26 @@ export default function AddExpenseModal({
           {fieldErrors.description && (
             <span className="form-field__error">{fieldErrors.description}</span>
           )}
+        </div>
+
+        {/* Category */}
+        <div className="form-field">
+          <label htmlFor="exp-category" className="form-field__label">
+            Category <span className="form-field__required">*</span>
+          </label>
+          <select
+            id="exp-category"
+            className="form-field__input"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+            disabled={isLoading}
+          >
+            {EXPENSE_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {CATEGORY_METADATA[cat].icon} {CATEGORY_METADATA[cat].label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Total Amount */}

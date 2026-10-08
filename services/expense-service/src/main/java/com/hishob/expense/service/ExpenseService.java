@@ -10,6 +10,7 @@ import com.hishob.expense.dto.ExpenseResponse;
 import com.hishob.expense.dto.ExpenseSplitRequest;
 import com.hishob.expense.dto.UpdatePersonalExpenseRequest;
 import com.hishob.expense.entity.Expense;
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
 import com.hishob.expense.entity.SplitType;
 import com.hishob.expense.exception.ExpenseNotFoundException;
@@ -71,13 +72,16 @@ public class ExpenseService {
         validateGroupCreateOrUpdate(req.getGroupId(), req.getPaidBy(), req.getSplits(), currentUserId);
         List<ExpenseSplit> splits = buildSplits(req.getSplitType(), req.getTotalAmount(), req.getSplits());
 
+        ExpenseCategory category = req.getCategory() != null ? req.getCategory() : ExpenseCategory.OTHER;
+
         Expense expense = new Expense(
                 req.getGroupId(),
                 req.getDescription().trim(),
                 req.getTotalAmount(),
                 req.getPaidBy(),
                 currentUserId,
-                req.getSplitType()
+                req.getSplitType(),
+                category
         );
 
         for (ExpenseSplit s : splits) {
@@ -93,13 +97,16 @@ public class ExpenseService {
         validatePersonalUsers(req.getPaidBy(), req.getSplits(), currentUserId);
         List<ExpenseSplit> splits = buildSplits(req.getSplitType(), req.getTotalAmount(), req.getSplits());
 
+        ExpenseCategory category = req.getCategory() != null ? req.getCategory() : ExpenseCategory.OTHER;
+
         Expense expense = new Expense(
                 null,
                 req.getDescription().trim(),
                 req.getTotalAmount(),
                 req.getPaidBy(),
                 currentUserId,
-                req.getSplitType()
+                req.getSplitType(),
+                category
         );
 
         for (ExpenseSplit s : splits) {
@@ -173,7 +180,8 @@ public class ExpenseService {
         validateGroupCreateOrUpdate(existing.getGroupId(), req.getPaidBy(), req.getSplits(), currentUserId);
         List<ExpenseSplit> splits = buildSplits(req.getSplitType(), req.getTotalAmount(), req.getSplits());
 
-        applyExpenseUpdate(existing, req.getDescription(), req.getTotalAmount(), req.getPaidBy(), req.getSplitType(), splits);
+        ExpenseCategory category = req.getCategory() != null ? req.getCategory() : ExpenseCategory.OTHER;
+        applyExpenseUpdate(existing, req.getDescription(), req.getTotalAmount(), req.getPaidBy(), req.getSplitType(), category, splits);
         Expense saved = expenseRepository.save(existing);
         sendExpenseNotifications(saved, TYPE_GROUP_UPDATED, "An expense was updated in the group.", currentUserId);
         return ExpenseResponse.fromEntity(saved);
@@ -193,7 +201,8 @@ public class ExpenseService {
         validatePersonalUsers(req.getPaidBy(), req.getSplits(), currentUserId);
         List<ExpenseSplit> splits = buildSplits(req.getSplitType(), req.getTotalAmount(), req.getSplits());
 
-        applyExpenseUpdate(existing, req.getDescription(), req.getTotalAmount(), req.getPaidBy(), req.getSplitType(), splits);
+        ExpenseCategory category = req.getCategory() != null ? req.getCategory() : ExpenseCategory.OTHER;
+        applyExpenseUpdate(existing, req.getDescription(), req.getTotalAmount(), req.getPaidBy(), req.getSplitType(), category, splits);
         Expense saved = expenseRepository.save(existing);
         sendExpenseNotifications(saved, TYPE_PERSONAL_UPDATED, "A personal expense was updated.", currentUserId);
         return ExpenseResponse.fromEntity(saved);
@@ -292,11 +301,13 @@ public class ExpenseService {
             BigDecimal totalAmount,
             UUID paidBy,
             SplitType splitType,
+            ExpenseCategory category,
             List<ExpenseSplit> splits) {
         existing.setDescription(description.trim());
         existing.setTotalAmount(totalAmount);
         existing.setPaidBy(paidBy);
         existing.setSplitType(splitType);
+        existing.setCategory(category != null ? category : ExpenseCategory.OTHER);
         existing.clearSplits();
         expenseRepository.saveAndFlush(existing);
         for (ExpenseSplit split : splits) {
@@ -314,6 +325,7 @@ public class ExpenseService {
                 "expenseId", expense.getId().toString(),
                 "amount", expense.getTotalAmount().toString(),
                 "description", expense.getDescription(),
+                "category", expense.getCategory() != null ? expense.getCategory().name() : "OTHER",
                 "personal", expense.getGroupId() == null,
                 "actorUserId", actorUserId.toString()
         );
@@ -331,3 +343,4 @@ public class ExpenseService {
         }
     }
 }
+

@@ -47,6 +47,10 @@ public class Expense {
     @Column(nullable = false, length = 20)
     private SplitType splitType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private ExpenseCategory category;
+
     @OneToMany(
             mappedBy = "expense",
             cascade = CascadeType.ALL,
@@ -66,12 +70,18 @@ public class Expense {
 
     public Expense(UUID groupId, String description, BigDecimal totalAmount,
                    UUID paidBy, UUID createdBy, SplitType splitType) {
+        this(groupId, description, totalAmount, paidBy, createdBy, splitType, ExpenseCategory.OTHER);
+    }
+
+    public Expense(UUID groupId, String description, BigDecimal totalAmount,
+                   UUID paidBy, UUID createdBy, SplitType splitType, ExpenseCategory category) {
         this.groupId = groupId;
         this.description = description;
         this.totalAmount = totalAmount;
         this.paidBy = paidBy;
         this.createdBy = createdBy;
         this.splitType = splitType;
+        this.category = category != null ? category : ExpenseCategory.OTHER;
     }
 
     @PrePersist
@@ -79,6 +89,9 @@ public class Expense {
         Instant now = Instant.now();
         this.createdAt = now;
         this.updatedAt = now;
+        if (this.category == null) {
+            this.category = ExpenseCategory.OTHER;
+        }
     }
 
     @PreUpdate
@@ -175,4 +188,13 @@ public class Expense {
         this.updatedAt = updatedAt;
     }
 
+    public ExpenseCategory getCategory() {
+        return category != null ? category : ExpenseCategory.OTHER;
+    }
+
+    public void setCategory(ExpenseCategory category) {
+        this.category = category != null ? category : ExpenseCategory.OTHER;
+    }
+
 }
+

@@ -2,6 +2,8 @@
  * Analytics and Reporting Types for HISHOB
  */
 
+import type { ExpenseCategory } from './expenses';
+
 export interface MemberSpendingSummary {
   userId: string;
   totalPaid: number;
@@ -17,6 +19,13 @@ export interface MonthlySpendingSummary {
   expenseCount: number;
 }
 
+export interface CategorySpendingSummary {
+  category: ExpenseCategory;
+  totalAmount: number;
+  expenseCount: number;
+  percentageOfTotal: number;
+}
+
 export interface GroupAnalyticsResponse {
   groupId: string;
   totalSpending: number;
@@ -25,6 +34,7 @@ export interface GroupAnalyticsResponse {
   totalSettledVolume: number;
   memberSpending: MemberSpendingSummary[];
   monthlyTrends: MonthlySpendingSummary[];
+  categorySpending?: CategorySpendingSummary[];
 }
 
 export type TimeRangeOption = 'ALL' | 'THIS_MONTH' | 'LAST_30_DAYS' | 'CUSTOM';

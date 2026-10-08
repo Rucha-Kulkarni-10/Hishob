@@ -240,6 +240,20 @@ export default function ConfirmPersonalSettlementModal({
               disabled={isSubmitting}
               maxLength={500}
             />
+            <div className="settlement-note-chips" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              {(['UPI', 'Cash', 'GPay'] as const).map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className={`btn btn--xs ${notes === chip ? 'btn--primary' : 'btn--ghost'}`}
+                  onClick={() => setNotes(chip)}
+                  disabled={isSubmitting}
+                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem', borderRadius: 'var(--radius-full)' }}
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

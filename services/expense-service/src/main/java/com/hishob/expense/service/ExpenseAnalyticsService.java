@@ -2,10 +2,12 @@ package com.hishob.expense.service;
 
 import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.SettlementServiceClient;
+import com.hishob.expense.dto.CategorySpendingSummary;
 import com.hishob.expense.dto.GroupAnalyticsResponse;
 import com.hishob.expense.dto.MemberSpendingSummary;
 import com.hishob.expense.dto.MonthlySpendingSummary;
 import com.hishob.expense.entity.Expense;
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
 import com.hishob.expense.repository.ExpenseRepository;
 import org.springframework.stereotype.Service;
@@ -151,6 +153,32 @@ public class ExpenseAnalyticsService {
                 })
                 .collect(Collectors.toList());
 
+        // 8. Category Spending breakdown
+        Map<ExpenseCategory, List<Expense>> categoryMap = expenses.stream()
+                .collect(Collectors.groupingBy(
+                        e -> e.getCategory() != null ? e.getCategory() : ExpenseCategory.OTHER,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        List<CategorySpendingSummary> categorySummaries = categoryMap.entrySet().stream()
+                .map(entry -> {
+                    ExpenseCategory cat = entry.getKey();
+                    List<Expense> catExpenses = entry.getValue();
+                    BigDecimal catTotal = catExpenses.stream()
+                            .map(Expense::getTotalAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+                    double percentage = totalSpending.compareTo(BigDecimal.ZERO) > 0
+                            ? catTotal.multiply(BigDecimal.valueOf(100))
+                                    .divide(totalSpending, 2, RoundingMode.HALF_UP)
+                                    .doubleValue()
+                            : 0.0;
+                    return new CategorySpendingSummary(cat, catTotal, catExpenses.size(), percentage);
+                })
+                .sorted((a, b) -> b.getTotalAmount().compareTo(a.getTotalAmount()))
+                .collect(Collectors.toList());
+
         return new GroupAnalyticsResponse(
                 groupId,
                 totalSpending,
@@ -158,7 +186,8 @@ public class ExpenseAnalyticsService {
                 averageExpense,
                 totalSettledVolume,
                 memberSummaries,
-                monthlyTrends
+                monthlyTrends,
+                categorySummaries
         );
     }
 
@@ -182,11 +211,12 @@ public class ExpenseAnalyticsService {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Date,Description,Total Amount (INR),Paid By,Split Type,Participants Count\r\n");
+        sb.append("Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count\r\n");
 
         for (Expense e : sortedExpenses) {
             String dateStr = dtf.format(e.getCreatedAt());
             String desc = escapeCsv(e.getDescription());
+            String categoryStr = formatCategoryName(e.getCategory());
             String amount = e.getTotalAmount().setScale(2, RoundingMode.HALF_UP).toPlainString();
             String paidBy = "User-" + e.getPaidBy().toString().substring(0, 8);
             String splitType = e.getSplitType() != null ? e.getSplitType().name() : "EQUAL";
@@ -194,6 +224,7 @@ public class ExpenseAnalyticsService {
 
             sb.append(dateStr).append(',')
                     .append(desc).append(',')
+                    .append(escapeCsv(categoryStr)).append(',')
                     .append(amount).append(',')
                     .append(paidBy).append(',')
                     .append(splitType).append(',')
@@ -201,6 +232,21 @@ public class ExpenseAnalyticsService {
         }
 
         return sb.toString();
+    }
+
+    private String formatCategoryName(ExpenseCategory category) {
+        if (category == null) return "Other";
+        return switch (category) {
+            case FOOD -> "Food & Dining";
+            case GROCERIES -> "Groceries";
+            case TRAVEL -> "Travel & Transit";
+            case SHOPPING -> "Shopping";
+            case ENTERTAINMENT -> "Entertainment";
+            case BILLS -> "Bills & Utilities";
+            case HEALTH -> "Health & Fitness";
+            case EDUCATION -> "Education";
+            case OTHER -> "Other";
+        };
     }
 
     private List<Expense> fetchExpenses(UUID groupId, Instant startInstant, Instant endInstant) {

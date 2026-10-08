@@ -9,7 +9,7 @@
  */
 
 import Modal from '@/components/common/Modal';
-import type { ExpenseResponse } from '@/types/expenses';
+import { type ExpenseResponse, getCategoryMeta } from '@/types/expenses';
 import type { MemberResponse } from '@/types/groups';
 
 interface ExpenseDetailModalProps {
@@ -55,6 +55,7 @@ export default function ExpenseDetailModal({
 }: ExpenseDetailModalProps) {
   const payerName = memberNames[expense.paidBy] || 'Unknown member';
   const creatorName = memberNames[expense.createdBy] || 'Unknown member';
+  const catMeta = getCategoryMeta(expense.category);
 
   return (
     <Modal
@@ -74,6 +75,10 @@ export default function ExpenseDetailModal({
         <div className="expense-detail__summary-meta">
           <span>
             Paid by <strong>{payerName}</strong>
+          </span>
+          <span>·</span>
+          <span className="badge badge--neutral">
+            {catMeta.icon} {catMeta.label}
           </span>
           <span>·</span>
           <span

@@ -1,5 +1,6 @@
 package com.hishob.expense.dto;
 
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.SplitType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
@@ -31,6 +32,8 @@ public class CreateExpenseRequest {
     @NotNull(message = "splitType is required")
     private SplitType splitType;
 
+    private ExpenseCategory category;
+
     @NotEmpty(message = "At least one split is required")
     @Valid
     private List<ExpenseSplitRequest> splits;
@@ -40,12 +43,19 @@ public class CreateExpenseRequest {
 
     public CreateExpenseRequest(UUID groupId, String description, BigDecimal totalAmount,
                                 UUID paidBy, SplitType splitType, List<ExpenseSplitRequest> splits) {
+        this(groupId, description, totalAmount, paidBy, splitType, splits, ExpenseCategory.OTHER);
+    }
+
+    public CreateExpenseRequest(UUID groupId, String description, BigDecimal totalAmount,
+                                UUID paidBy, SplitType splitType, List<ExpenseSplitRequest> splits,
+                                ExpenseCategory category) {
         this.groupId = groupId;
         this.description = description;
         this.totalAmount = totalAmount;
         this.paidBy = paidBy;
         this.splitType = splitType;
         this.splits = splits;
+        this.category = category != null ? category : ExpenseCategory.OTHER;
     }
 
     public UUID getGroupId() {
@@ -88,6 +98,14 @@ public class CreateExpenseRequest {
         this.splitType = splitType;
     }
 
+    public ExpenseCategory getCategory() {
+        return category != null ? category : ExpenseCategory.OTHER;
+    }
+
+    public void setCategory(ExpenseCategory category) {
+        this.category = category != null ? category : ExpenseCategory.OTHER;
+    }
+
     public List<ExpenseSplitRequest> getSplits() {
         return splits;
     }
@@ -97,3 +115,4 @@ public class CreateExpenseRequest {
     }
 
 }
+

@@ -1,6 +1,7 @@
 package com.hishob.expense.dto;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public class GroupAnalyticsResponse {
     private BigDecimal totalSettledVolume;
     private List<MemberSpendingSummary> memberSpending;
     private List<MonthlySpendingSummary> monthlyTrends;
+    private List<CategorySpendingSummary> categorySpending = new ArrayList<>();
 
     public GroupAnalyticsResponse() {
     }
@@ -21,6 +23,14 @@ public class GroupAnalyticsResponse {
                                   BigDecimal averageExpense, BigDecimal totalSettledVolume,
                                   List<MemberSpendingSummary> memberSpending,
                                   List<MonthlySpendingSummary> monthlyTrends) {
+        this(groupId, totalSpending, expenseCount, averageExpense, totalSettledVolume, memberSpending, monthlyTrends, new ArrayList<>());
+    }
+
+    public GroupAnalyticsResponse(UUID groupId, BigDecimal totalSpending, long expenseCount,
+                                  BigDecimal averageExpense, BigDecimal totalSettledVolume,
+                                  List<MemberSpendingSummary> memberSpending,
+                                  List<MonthlySpendingSummary> monthlyTrends,
+                                  List<CategorySpendingSummary> categorySpending) {
         this.groupId = groupId;
         this.totalSpending = totalSpending;
         this.expenseCount = expenseCount;
@@ -28,6 +38,7 @@ public class GroupAnalyticsResponse {
         this.totalSettledVolume = totalSettledVolume;
         this.memberSpending = memberSpending;
         this.monthlyTrends = monthlyTrends;
+        this.categorySpending = categorySpending != null ? categorySpending : new ArrayList<>();
     }
 
     public UUID getGroupId() {
@@ -85,4 +96,13 @@ public class GroupAnalyticsResponse {
     public void setMonthlyTrends(List<MonthlySpendingSummary> monthlyTrends) {
         this.monthlyTrends = monthlyTrends;
     }
+
+    public List<CategorySpendingSummary> getCategorySpending() {
+        return categorySpending;
+    }
+
+    public void setCategorySpending(List<CategorySpendingSummary> categorySpending) {
+        this.categorySpending = categorySpending;
+    }
 }
+

@@ -3,7 +3,7 @@
  *
  * Shows:
  *   - Description, total amount, split type
- *   - Who paid
+ *   - Clear role summary (who paid, your share)
  *   - Per-participant breakdown: name, amount, percentage
  *   - Created / updated timestamps
  *   - Edit & Delete buttons if current user is creator
@@ -11,6 +11,7 @@
 
 import Modal from '@/components/common/Modal';
 import type { PersonalExpenseResponse } from '@/types/personalExpenses';
+import { getCategoryMeta } from '@/types/expenses';
 
 interface PersonalExpenseDetailModalProps {
   isOpen: boolean;
@@ -20,6 +21,23 @@ interface PersonalExpenseDetailModalProps {
   currentUserId: string | null;
   onEdit?: (expense: PersonalExpenseResponse) => void;
   onDelete?: (expense: PersonalExpenseResponse) => void;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function resolveMemberName(
+  userId: string,
+  memberNames: Record<string, string>,
+  currentUserId: string | null
+): string {
+  if (currentUserId && userId === currentUserId) {
+    return 'You';
+  }
+  const resolved = memberNames[userId];
+  if (!resolved || UUID_REGEX.test(resolved.trim())) {
+    return 'Unknown member';
+  }
+  return resolved.trim();
 }
 
 function formatDate(iso: string): string {
@@ -59,8 +77,15 @@ export default function PersonalExpenseDetailModal({
   onDelete,
 }: PersonalExpenseDetailModalProps) {
   const isCreator = currentUserId === expense.createdBy;
-  const payerName = memberNames[expense.paidBy] || 'Unknown member';
-  const creatorName = memberNames[expense.createdBy] || 'Unknown member';
+  const isCurrentUserPayer = Boolean(currentUserId && expense.paidBy === currentUserId);
+  const payerName = isCurrentUserPayer
+    ? 'You'
+    : resolveMemberName(expense.paidBy, memberNames, currentUserId);
+  const creatorName = isCreator
+    ? 'You'
+    : resolveMemberName(expense.createdBy, memberNames, currentUserId);
+  const mySplit = currentUserId ? expense.splits.find((s) => s.userId === currentUserId) : undefined;
+  const catMeta = getCategoryMeta(expense.category);
 
   return (
     <Modal
@@ -79,8 +104,20 @@ export default function PersonalExpenseDetailModal({
         </div>
         <div className="expense-detail__summary-meta">
           <span>
-            Paid by <strong>{payerName}</strong>
+            {isCurrentUserPayer ? 'You paid' : `${payerName} paid`} <strong>₹{formatAmount(expense.totalAmount)}</strong>
           </span>
+          <span>·</span>
+          <span className="badge badge--neutral">
+            {catMeta.icon} {catMeta.label}
+          </span>
+          {mySplit && (
+            <>
+              <span>·</span>
+              <span>
+                Your share: <strong>₹{formatAmount(mySplit.amount)}</strong>
+              </span>
+            </>
+          )}
           <span>·</span>
           <span
             className={`badge badge--${expense.splitType === 'EQUAL' ? 'primary' : 'muted'}`}
@@ -104,7 +141,7 @@ export default function PersonalExpenseDetailModal({
           <tbody>
             {expense.splits.map((s) => (
               <tr key={s.userId}>
-                <td>{memberNames[s.userId] || 'Unknown member'}</td>
+                <td>{resolveMemberName(s.userId, memberNames, currentUserId)}</td>
                 <td>₹{formatAmount(s.amount)}</td>
                 {expense.splitType === 'PERCENTAGE' && (
                   <td>
@@ -120,7 +157,7 @@ export default function PersonalExpenseDetailModal({
       {/* Footer meta */}
       <div className="expense-detail__footer">
         <span>Created by <strong>{creatorName}</strong></span>
-        <span>Added {formatDate(expense.createdAt)}</span>
+        <span>Recorded on {formatDate(expense.createdAt)}</span>
         {expense.updatedAt !== expense.createdAt && (
           <span>Updated {formatDate(expense.updatedAt)}</span>
         )}

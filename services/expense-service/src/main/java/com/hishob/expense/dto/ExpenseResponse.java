@@ -1,6 +1,7 @@
 package com.hishob.expense.dto;
 
 import com.hishob.expense.entity.Expense;
+import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.SplitType;
 
 import java.math.BigDecimal;
@@ -18,6 +19,7 @@ public class ExpenseResponse {
     private UUID paidBy;
     private UUID createdBy;
     private SplitType splitType;
+    private ExpenseCategory category;
     private List<ExpenseSplitResponse> splits;
     private Instant createdAt;
     private Instant updatedAt;
@@ -28,6 +30,12 @@ public class ExpenseResponse {
     public ExpenseResponse(UUID id, UUID groupId, String description, BigDecimal totalAmount,
                            UUID paidBy, UUID createdBy, SplitType splitType,
                            List<ExpenseSplitResponse> splits, Instant createdAt, Instant updatedAt) {
+        this(id, groupId, description, totalAmount, paidBy, createdBy, splitType, ExpenseCategory.OTHER, splits, createdAt, updatedAt);
+    }
+
+    public ExpenseResponse(UUID id, UUID groupId, String description, BigDecimal totalAmount,
+                           UUID paidBy, UUID createdBy, SplitType splitType, ExpenseCategory category,
+                           List<ExpenseSplitResponse> splits, Instant createdAt, Instant updatedAt) {
         this.id = id;
         this.groupId = groupId;
         this.description = description;
@@ -35,6 +43,7 @@ public class ExpenseResponse {
         this.paidBy = paidBy;
         this.createdBy = createdBy;
         this.splitType = splitType;
+        this.category = category != null ? category : ExpenseCategory.OTHER;
         this.splits = splits;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -49,6 +58,7 @@ public class ExpenseResponse {
                 e.getPaidBy(),
                 e.getCreatedBy(),
                 e.getSplitType(),
+                e.getCategory() != null ? e.getCategory() : ExpenseCategory.OTHER,
                 e.getSplits().stream()
                         .map(ExpenseSplitResponse::fromEntity)
                         .collect(Collectors.toList()),
@@ -113,6 +123,14 @@ public class ExpenseResponse {
         this.splitType = splitType;
     }
 
+    public ExpenseCategory getCategory() {
+        return category != null ? category : ExpenseCategory.OTHER;
+    }
+
+    public void setCategory(ExpenseCategory category) {
+        this.category = category != null ? category : ExpenseCategory.OTHER;
+    }
+
     public List<ExpenseSplitResponse> getSplits() {
         return splits;
     }
@@ -138,3 +156,4 @@ public class ExpenseResponse {
     }
 
 }
+

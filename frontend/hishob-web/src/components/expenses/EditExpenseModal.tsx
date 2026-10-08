@@ -9,7 +9,14 @@
 import { type FormEvent, useCallback, useMemo, useState } from 'react';
 import Modal from '@/components/common/Modal';
 import { updateExpense } from '@/services/expenseService';
-import type { CreateExpenseRequest, ExpenseResponse, SplitType } from '@/types/expenses';
+import {
+  type CreateExpenseRequest,
+  type ExpenseCategory,
+  EXPENSE_CATEGORIES,
+  CATEGORY_METADATA,
+  type ExpenseResponse,
+  type SplitType,
+} from '@/types/expenses';
 import type { MemberResponse } from '@/types/groups';
 import { getErrorMessage } from '@/utils/errorUtils';
 
@@ -53,6 +60,7 @@ export default function EditExpenseModal({
   const [description, setDescription] = useState(expense.description);
   const [totalAmount, setTotalAmount] = useState(String(expense.totalAmount));
   const [paidBy, setPaidBy] = useState(expense.paidBy);
+  const [category, setCategory] = useState<ExpenseCategory>(expense.category || 'OTHER');
   const [splitType, setSplitType] = useState<SplitType>(expense.splitType);
   const [participants, setParticipants] = useState<ParticipantEntry[]>(buildParticipants);
   const [apiError, setApiError] = useState('');
@@ -66,6 +74,7 @@ export default function EditExpenseModal({
     setDescription(expense.description);
     setTotalAmount(String(expense.totalAmount));
     setPaidBy(expense.paidBy);
+    setCategory(expense.category || 'OTHER');
     setSplitType(expense.splitType);
     setParticipants(buildParticipants());
     setApiError('');
@@ -176,6 +185,7 @@ export default function EditExpenseModal({
       totalAmount: parseFloat(totalAmount),
       paidBy,
       splitType,
+      category,
       splits,
     };
 
@@ -228,6 +238,26 @@ export default function EditExpenseModal({
           {fieldErrors.description && (
             <span className="form-field__error">{fieldErrors.description}</span>
           )}
+        </div>
+
+        {/* Category */}
+        <div className="form-field">
+          <label htmlFor="edit-exp-category" className="form-field__label">
+            Category <span className="form-field__required">*</span>
+          </label>
+          <select
+            id="edit-exp-category"
+            className="form-field__input"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
+            disabled={isLoading || !isCreator}
+          >
+            {EXPENSE_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {CATEGORY_METADATA[cat].icon} {CATEGORY_METADATA[cat].label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Total Amount */}

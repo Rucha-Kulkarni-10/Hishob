@@ -11,7 +11,7 @@
  *   - Edit/Delete actions only when currentUserId === expense.createdBy
  */
 
-import type { ExpenseResponse } from '@/types/expenses';
+import { type ExpenseResponse, getCategoryMeta } from '@/types/expenses';
 import type { MemberResponse } from '@/types/groups';
 
 interface ExpenseCardProps {
@@ -61,6 +61,7 @@ export default function ExpenseCard({
   const isCreator = currentUserId === expense.createdBy;
   const payerName = memberNames[expense.paidBy] || 'Unknown member';
   const participantCount = expense.splits.length;
+  const catMeta = getCategoryMeta(expense.category);
 
   return (
     <div className="expense-card" role="article">
@@ -77,6 +78,9 @@ export default function ExpenseCard({
         <div className="expense-card__meta-row">
           <span className="expense-card__meta">
             Paid by <strong>{payerName}</strong>
+          </span>
+          <span className="badge badge--neutral expense-card__category-badge">
+            {catMeta.icon} {catMeta.label}
           </span>
           <span className="expense-card__meta">
             {participantCount} participant{participantCount !== 1 ? 's' : ''}

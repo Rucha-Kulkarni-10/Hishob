@@ -11,6 +11,53 @@
 
 export type SplitType = 'EQUAL' | 'EXACT' | 'PERCENTAGE';
 
+export type ExpenseCategory =
+  | 'FOOD'
+  | 'GROCERIES'
+  | 'TRAVEL'
+  | 'SHOPPING'
+  | 'ENTERTAINMENT'
+  | 'BILLS'
+  | 'HEALTH'
+  | 'EDUCATION'
+  | 'OTHER';
+
+export interface CategoryMetadata {
+  label: string;
+  icon: string;
+}
+
+export const CATEGORY_METADATA: Record<ExpenseCategory, CategoryMetadata> = {
+  FOOD: { label: 'Food & Dining', icon: '🍔' },
+  GROCERIES: { label: 'Groceries', icon: '🛒' },
+  TRAVEL: { label: 'Travel & Transit', icon: '✈️' },
+  SHOPPING: { label: 'Shopping', icon: '🛍️' },
+  ENTERTAINMENT: { label: 'Entertainment', icon: '🎬' },
+  BILLS: { label: 'Bills & Utilities', icon: '📄' },
+  HEALTH: { label: 'Health & Fitness', icon: '🏥' },
+  EDUCATION: { label: 'Education', icon: '🎓' },
+  OTHER: { label: 'Other', icon: '🏷️' },
+};
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'FOOD',
+  'GROCERIES',
+  'TRAVEL',
+  'SHOPPING',
+  'ENTERTAINMENT',
+  'BILLS',
+  'HEALTH',
+  'EDUCATION',
+  'OTHER',
+];
+
+export function getCategoryMeta(category?: ExpenseCategory | null): CategoryMetadata {
+  if (category && CATEGORY_METADATA[category]) {
+    return CATEGORY_METADATA[category];
+  }
+  return CATEGORY_METADATA.OTHER;
+}
+
 /** One entry in the splits array of CreateExpenseRequest */
 export interface ExpenseSplitRequest {
   userId: string;        // UUID
@@ -25,6 +72,7 @@ export interface CreateExpenseRequest {
   totalAmount: number;         // ≥ 0.01
   paidBy: string;              // UUID, must be a group member
   splitType: SplitType;
+  category?: ExpenseCategory;
   splits: ExpenseSplitRequest[];
 }
 
@@ -45,6 +93,7 @@ export interface ExpenseResponse {
   paidBy: string;              // UUID
   createdBy: string;           // UUID
   splitType: SplitType;
+  category: ExpenseCategory;
   splits: ExpenseSplitResponse[];
   createdAt: string;           // ISO-8601 Instant
   updatedAt: string;           // ISO-8601 Instant

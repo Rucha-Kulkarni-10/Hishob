@@ -20,7 +20,11 @@ import { Link, useParams } from 'react-router-dom';
 import { getGroupDetail, listMembers } from '@/services/groupService';
 import { deleteExpense, getGroupExpenses } from '@/services/expenseService';
 import type { GroupResponse, MemberResponse } from '@/types/groups';
-import type { ExpenseResponse } from '@/types/expenses';
+import {
+  type ExpenseResponse,
+  EXPENSE_CATEGORIES,
+  CATEGORY_METADATA,
+} from '@/types/expenses';
 import { useAuth } from '@/hooks/useAuth';
 import { getErrorMessage } from '@/utils/errorUtils';
 import LoadingState from '@/components/common/LoadingState';
@@ -38,6 +42,7 @@ export default function GroupExpensesPage() {
   const [group, setGroup] = useState<GroupResponse | null>(null);
   const [members, setMembers] = useState<MemberResponse[]>([]);
   const [expenses, setExpenses] = useState<ExpenseResponse[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
 
   const [isLoading, setIsLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
@@ -148,6 +153,11 @@ export default function GroupExpensesPage() {
     }
   };
 
+  const filteredExpenses = useMemo(() => {
+    if (categoryFilter === 'ALL') return expenses;
+    return expenses.filter((e) => (e.category || 'OTHER') === categoryFilter);
+  }, [expenses, categoryFilter]);
+
   // ── Render guards ──────────────────────────────────────────────────────────
   if (isLoading) {
     return <LoadingState label="Loading group…" height="lg" />;
@@ -254,8 +264,39 @@ export default function GroupExpensesPage() {
 
       {/* Expense list section */}
       <section className="group-details-section" aria-label="Expense list">
+        {expenses.length > 0 && (
+          <div className="expenses-filter-bar" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            <label htmlFor="group-category-filter" style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--color-text-secondary, #6b7280)' }}>
+              Category:
+            </label>
+            <select
+              id="group-category-filter"
+              className="form-field__input"
+              style={{ width: 'auto', minWidth: '180px' }}
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="ALL">All Categories</option>
+              {EXPENSE_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {CATEGORY_METADATA[cat].icon} {CATEGORY_METADATA[cat].label}
+                </option>
+              ))}
+            </select>
+            {categoryFilter !== 'ALL' && (
+              <button
+                type="button"
+                className="btn btn--ghost btn--sm"
+                onClick={() => setCategoryFilter('ALL')}
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+        )}
+
         <ExpenseList
-          expenses={expenses}
+          expenses={filteredExpenses}
           members={members}
           memberNames={memberNames}
           currentUserId={user?.id ?? null}
