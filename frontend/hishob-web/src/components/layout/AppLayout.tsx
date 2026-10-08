@@ -74,6 +74,14 @@ export default function AppLayout() {
             Balances
           </NavLink>
           <NavLink
+            to="/reports/personal"
+            className={({ isActive }) =>
+              `app-header__nav-link${isActive ? ' is-active' : ''}`
+            }
+          >
+            Reports
+          </NavLink>
+          <NavLink
             to="/notifications"
             className={({ isActive }) =>
               `app-header__nav-link${isActive ? ' is-active' : ''}`
@@ -81,6 +89,7 @@ export default function AppLayout() {
           >
             Notifications
           </NavLink>
+
         </nav>
 
         <div className="app-header__user">

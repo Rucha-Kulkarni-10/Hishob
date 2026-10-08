@@ -7,7 +7,7 @@
  */
 
 import api from './api';
-import type { GroupAnalyticsResponse } from '@/types/analytics';
+import type { GroupAnalyticsResponse, PersonalAnalyticsResponse } from '@/types/analytics';
 
 export interface AnalyticsQueryParams {
   startDate?: string;
@@ -42,3 +42,31 @@ export async function exportGroupExpensesCsv(
   });
   return response.data;
 }
+
+/**
+ * Fetch financial overview, friend spending, monthly trends, and category breakdown for personal expenses.
+ */
+export async function getPersonalAnalytics(
+  params?: AnalyticsQueryParams
+): Promise<PersonalAnalyticsResponse> {
+  const response = await api.get<PersonalAnalyticsResponse>(
+    '/api/personal-expenses/analytics',
+    { params }
+  );
+  return response.data;
+}
+
+/**
+ * Export personal expenses as CSV.
+ * Returns a Blob suitable for browser download.
+ */
+export async function exportPersonalExpensesCsv(
+  params?: AnalyticsQueryParams
+): Promise<Blob> {
+  const response = await api.get('/api/personal-expenses/export/csv', {
+    params,
+    responseType: 'blob',
+  });
+  return response.data;
+}
+

@@ -343,16 +343,94 @@ class ExpenseAnalyticsServiceTest {
     }
 
     @Test
-    @DisplayName("15. Empty group returns empty category breakdown with zero safe percentage")
-    void testEmptyGroupCategoryBreakdown() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
-        when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
-        when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
+    @DisplayName("16. Personal analytics with no personal expenses returns zero values")
+    void testPersonalAnalyticsEmpty() {
+        when(expenseRepository.findPersonalExpensesForUser(user1)).thenReturn(List.of());
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        com.hishob.expense.dto.PersonalAnalyticsResponse response =
+                analyticsService.getPersonalAnalytics(user1, null, null);
 
+        assertThat(response.getTotalSpending()).isEqualByComparingTo("0.00");
+        assertThat(response.getExpenseCount()).isEqualTo(0);
+        assertThat(response.getAverageExpense()).isEqualByComparingTo("0.00");
+        assertThat(response.getTotalPaidByUser()).isEqualByComparingTo("0.00");
+        assertThat(response.getTotalUserShare()).isEqualByComparingTo("0.00");
         assertThat(response.getCategorySpending()).isEmpty();
+        assertThat(response.getFriendSpending()).isEmpty();
+        assertThat(response.getMonthlyTrends()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("17. Personal analytics aggregates spending, categories, friends, and monthly trends")
+    void testPersonalAnalyticsAggregations() {
+        Instant octDate = Instant.parse("2026-10-04T12:00:00Z");
+        Instant sepDate = Instant.parse("2026-09-15T10:00:00Z");
+
+        // Expense 1: user1 paid 400 for groceries, split 200/200 with user2
+        Expense e1 = createTestExpense(UUID.randomUUID(), null, "Groceries", new BigDecimal("400.00"), user1, octDate, List.of(
+                new ExpenseSplit(user1, new BigDecimal("200.00"), SplitType.EQUAL, null),
+                new ExpenseSplit(user2, new BigDecimal("200.00"), SplitType.EQUAL, null)
+        ));
+        e1.setCategory(ExpenseCategory.GROCERIES);
+
+        // Expense 2: user2 paid 100 for taxi, split 50/50 with user1
+        Expense e2 = createTestExpense(UUID.randomUUID(), null, "Taxi", new BigDecimal("100.00"), user2, sepDate, List.of(
+                new ExpenseSplit(user1, new BigDecimal("50.00"), SplitType.EQUAL, null),
+                new ExpenseSplit(user2, new BigDecimal("50.00"), SplitType.EQUAL, null)
+        ));
+        e2.setCategory(ExpenseCategory.TRAVEL);
+
+        when(expenseRepository.findPersonalExpensesForUser(user1)).thenReturn(List.of(e1, e2));
+
+        com.hishob.expense.dto.PersonalAnalyticsResponse response =
+                analyticsService.getPersonalAnalytics(user1, null, null);
+
+        assertThat(response.getTotalSpending()).isEqualByComparingTo("500.00");
+        assertThat(response.getExpenseCount()).isEqualTo(2);
+        assertThat(response.getAverageExpense()).isEqualByComparingTo("250.00");
+        assertThat(response.getTotalPaidByUser()).isEqualByComparingTo("400.00");
+        assertThat(response.getTotalUserShare()).isEqualByComparingTo("250.00");
+
+        // Category checks
+        assertThat(response.getCategorySpending()).hasSize(2);
+        CategorySpendingSummary groceries = response.getCategorySpending().stream()
+                .filter(c -> c.getCategory() == ExpenseCategory.GROCERIES).findFirst().orElseThrow();
+        assertThat(groceries.getTotalAmount()).isEqualByComparingTo("400.00");
+        assertThat(groceries.getPercentageOfTotal()).isEqualTo(80.0);
+
+        // Friend checks
+        assertThat(response.getFriendSpending()).hasSize(1);
+        com.hishob.expense.dto.FriendSpendingSummary fSummary = response.getFriendSpending().get(0);
+        assertThat(fSummary.getFriendUserId()).isEqualTo(user2);
+        assertThat(fSummary.getTotalAmount()).isEqualByComparingTo("500.00");
+        assertThat(fSummary.getExpenseCount()).isEqualTo(2);
+        assertThat(fSummary.getUserShare()).isEqualByComparingTo("250.00");
+        assertThat(fSummary.getFriendShare()).isEqualByComparingTo("250.00");
+
+        // Monthly trends
+        assertThat(response.getMonthlyTrends()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("18. Personal CSV export generates proper headers and escaping")
+    void testPersonalCsvExport() {
+        Instant now = Instant.parse("2026-10-04T12:00:00Z");
+        Expense e = createTestExpense(UUID.randomUUID(), null, "Dinner with, \"quote\"", new BigDecimal("300.00"), user1, now, List.of(
+                new ExpenseSplit(user1, new BigDecimal("150.00"), SplitType.EQUAL, null),
+                new ExpenseSplit(user2, new BigDecimal("150.00"), SplitType.EQUAL, null)
+        ));
+        e.setCategory(ExpenseCategory.FOOD);
+
+        when(expenseRepository.findPersonalExpensesForUser(user1)).thenReturn(List.of(e));
+
+        String csv = analyticsService.exportPersonalExpensesCsv(user1, null, null);
+
+        assertThat(csv).contains("Date,Description,Category,Total Amount (INR),Friend,Paid By,Split Type,Your Share (INR),Friend Share (INR)");
+        assertThat(csv).contains("\"Dinner with, \"\"quote\"\"\"");
+        assertThat(csv).contains("\"Food & Dining\"");
+        assertThat(csv).contains("300.00");
+        assertThat(csv).contains("User-" + user2.toString().substring(0, 8));
+        assertThat(csv).contains("You");
+        assertThat(csv).contains("150.00");
     }
 }

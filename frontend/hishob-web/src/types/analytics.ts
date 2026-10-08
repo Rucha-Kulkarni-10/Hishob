@@ -26,6 +26,25 @@ export interface CategorySpendingSummary {
   percentageOfTotal: number;
 }
 
+export interface FriendSpendingSummary {
+  friendUserId: string;
+  totalSpending: number;
+  expenseCount: number;
+  userShare?: number;
+  friendShare?: number;
+}
+
+export interface PersonalAnalyticsResponse {
+  totalSpending: number;
+  expenseCount: number;
+  averageExpense: number;
+  totalPaidByUser: number;
+  totalUserShare: number;
+  categorySpending?: CategorySpendingSummary[];
+  friendSpending?: FriendSpendingSummary[];
+  monthlyTrends: MonthlySpendingSummary[];
+}
+
 export interface GroupAnalyticsResponse {
   groupId: string;
   totalSpending: number;
@@ -47,3 +66,4 @@ export interface AnalyticsFilterState {
   payerId?: string;
   splitType?: SplitTypeFilter;
 }
+

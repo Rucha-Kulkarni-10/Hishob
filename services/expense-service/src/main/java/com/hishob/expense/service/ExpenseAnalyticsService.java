@@ -3,9 +3,11 @@ package com.hishob.expense.service;
 import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.dto.CategorySpendingSummary;
+import com.hishob.expense.dto.FriendSpendingSummary;
 import com.hishob.expense.dto.GroupAnalyticsResponse;
 import com.hishob.expense.dto.MemberSpendingSummary;
 import com.hishob.expense.dto.MonthlySpendingSummary;
+import com.hishob.expense.dto.PersonalAnalyticsResponse;
 import com.hishob.expense.entity.Expense;
 import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
@@ -232,6 +234,240 @@ public class ExpenseAnalyticsService {
         }
 
         return sb.toString();
+    }
+
+    public PersonalAnalyticsResponse getPersonalAnalytics(
+            UUID currentUserId,
+            String startDateStr,
+            String endDateStr) {
+
+        Instant startInstant = parseDateBoundary(startDateStr, false);
+        Instant endInstant = parseDateBoundary(endDateStr, true);
+
+        List<Expense> allPersonalExpenses = expenseRepository.findPersonalExpensesForUser(currentUserId);
+        List<Expense> expenses = filterByDateRange(allPersonalExpenses, startInstant, endInstant);
+
+        long expenseCount = expenses.size();
+        BigDecimal totalSpending = expenses.stream()
+                .map(Expense::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal averageExpense = expenseCount > 0
+                ? totalSpending.divide(BigDecimal.valueOf(expenseCount), 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal totalPaidByUser = expenses.stream()
+                .filter(e -> currentUserId.equals(e.getPaidBy()))
+                .map(Expense::getTotalAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal totalUserShare = expenses.stream()
+                .flatMap(e -> e.getSplits().stream())
+                .filter(s -> currentUserId.equals(s.getUserId()))
+                .map(ExpenseSplit::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        // Category breakdown
+        Map<ExpenseCategory, List<Expense>> categoryMap = expenses.stream()
+                .collect(Collectors.groupingBy(
+                        e -> e.getCategory() != null ? e.getCategory() : ExpenseCategory.OTHER,
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        List<CategorySpendingSummary> categorySummaries = categoryMap.entrySet().stream()
+                .map(entry -> {
+                    ExpenseCategory cat = entry.getKey();
+                    List<Expense> catExpenses = entry.getValue();
+                    BigDecimal catTotal = catExpenses.stream()
+                            .map(Expense::getTotalAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+                    double percentage = totalSpending.compareTo(BigDecimal.ZERO) > 0
+                            ? catTotal.multiply(BigDecimal.valueOf(100))
+                                    .divide(totalSpending, 2, RoundingMode.HALF_UP)
+                                    .doubleValue()
+                            : 0.0;
+                    return new CategorySpendingSummary(cat, catTotal, catExpenses.size(), percentage);
+                })
+                .sorted((a, b) -> b.getTotalAmount().compareTo(a.getTotalAmount()))
+                .collect(Collectors.toList());
+
+        // Friend breakdown
+        Map<UUID, List<Expense>> friendExpensesMap = new LinkedHashMap<>();
+        for (Expense e : expenses) {
+            Set<UUID> otherUsers = new LinkedHashSet<>();
+            if (e.getPaidBy() != null && !currentUserId.equals(e.getPaidBy())) {
+                otherUsers.add(e.getPaidBy());
+            }
+            if (e.getSplits() != null) {
+                for (ExpenseSplit s : e.getSplits()) {
+                    if (s.getUserId() != null && !currentUserId.equals(s.getUserId())) {
+                        otherUsers.add(s.getUserId());
+                    }
+                }
+            }
+            for (UUID friendId : otherUsers) {
+                friendExpensesMap.computeIfAbsent(friendId, k -> new ArrayList<>()).add(e);
+            }
+        }
+
+        List<com.hishob.expense.dto.FriendSpendingSummary> friendSummaries = friendExpensesMap.entrySet().stream()
+                .map(entry -> {
+                    UUID friendId = entry.getKey();
+                    List<Expense> fExpenses = entry.getValue();
+                    BigDecimal fTotal = fExpenses.stream()
+                            .map(Expense::getTotalAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    BigDecimal uShare = fExpenses.stream()
+                            .flatMap(e -> e.getSplits().stream())
+                            .filter(s -> currentUserId.equals(s.getUserId()))
+                            .map(ExpenseSplit::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    BigDecimal fShare = fExpenses.stream()
+                            .flatMap(e -> e.getSplits().stream())
+                            .filter(s -> friendId.equals(s.getUserId()))
+                            .map(ExpenseSplit::getAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    String friendName = "User-" + friendId.toString().substring(0, 8);
+                    return new com.hishob.expense.dto.FriendSpendingSummary(
+                            friendId, friendName, fTotal, fExpenses.size(), uShare, fShare);
+                })
+                .sorted((a, b) -> b.getTotalAmount().compareTo(a.getTotalAmount()))
+                .collect(Collectors.toList());
+
+        // Monthly trends
+        Map<YearMonth, List<Expense>> monthlyMap = expenses.stream()
+                .collect(Collectors.groupingBy(
+                        e -> YearMonth.from(e.getCreatedAt().atZone(ZoneOffset.UTC)),
+                        LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+
+        DateTimeFormatter monthLabelFormat = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH);
+        List<MonthlySpendingSummary> monthlyTrends = monthlyMap.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> {
+                    YearMonth ym = entry.getKey();
+                    List<Expense> monthExpenses = entry.getValue();
+                    BigDecimal monthTotal = monthExpenses.stream()
+                            .map(Expense::getTotalAmount)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add)
+                            .setScale(2, RoundingMode.HALF_UP);
+                    return new MonthlySpendingSummary(
+                            ym.toString(),
+                            ym.format(monthLabelFormat),
+                            monthTotal,
+                            monthExpenses.size()
+                    );
+                })
+                .collect(Collectors.toList());
+
+        return new com.hishob.expense.dto.PersonalAnalyticsResponse(
+                totalSpending,
+                expenseCount,
+                averageExpense,
+                totalPaidByUser,
+                totalUserShare,
+                categorySummaries,
+                friendSummaries,
+                monthlyTrends
+        );
+    }
+
+    public String exportPersonalExpensesCsv(
+            UUID currentUserId,
+            String startDateStr,
+            String endDateStr) {
+
+        Instant startInstant = parseDateBoundary(startDateStr, false);
+        Instant endInstant = parseDateBoundary(endDateStr, true);
+
+        List<Expense> allPersonalExpenses = expenseRepository.findPersonalExpensesForUser(currentUserId);
+        List<Expense> expenses = filterByDateRange(allPersonalExpenses, startInstant, endInstant);
+
+        List<Expense> sortedExpenses = new ArrayList<>(expenses);
+        sortedExpenses.sort(Comparator.comparing(Expense::getCreatedAt));
+
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC);
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Date,Description,Category,Total Amount (INR),Friend,Paid By,Split Type,Your Share (INR),Friend Share (INR)\r\n");
+
+        for (Expense e : sortedExpenses) {
+            String dateStr = dtf.format(e.getCreatedAt());
+            String desc = escapeCsv(e.getDescription());
+            String categoryStr = formatCategoryName(e.getCategory());
+            String totalAmount = e.getTotalAmount().setScale(2, RoundingMode.HALF_UP).toPlainString();
+
+            // Resolve friend
+            UUID friendId = null;
+            if (e.getSplits() != null) {
+                for (ExpenseSplit s : e.getSplits()) {
+                    if (s.getUserId() != null && !currentUserId.equals(s.getUserId())) {
+                        friendId = s.getUserId();
+                        break;
+                    }
+                }
+            }
+            if (friendId == null && e.getPaidBy() != null && !currentUserId.equals(e.getPaidBy())) {
+                friendId = e.getPaidBy();
+            }
+
+            String friendStr = friendId != null ? "User-" + friendId.toString().substring(0, 8) : "N/A";
+            String paidByStr = currentUserId.equals(e.getPaidBy()) ? "You" : (friendId != null ? "User-" + friendId.toString().substring(0, 8) : "User-" + e.getPaidBy().toString().substring(0, 8));
+            String splitType = e.getSplitType() != null ? e.getSplitType().name() : "EQUAL";
+
+            BigDecimal yourShare = BigDecimal.ZERO;
+            BigDecimal friendShare = BigDecimal.ZERO;
+            if (e.getSplits() != null) {
+                for (ExpenseSplit s : e.getSplits()) {
+                    if (currentUserId.equals(s.getUserId())) {
+                        yourShare = s.getAmount().setScale(2, RoundingMode.HALF_UP);
+                    } else if (friendId != null && friendId.equals(s.getUserId())) {
+                        friendShare = s.getAmount().setScale(2, RoundingMode.HALF_UP);
+                    }
+                }
+            }
+
+            sb.append(dateStr).append(',')
+                    .append(desc).append(',')
+                    .append(escapeCsv(categoryStr)).append(',')
+                    .append(totalAmount).append(',')
+                    .append(friendStr).append(',')
+                    .append(paidByStr).append(',')
+                    .append(splitType).append(',')
+                    .append(yourShare.toPlainString()).append(',')
+                    .append(friendShare.toPlainString()).append("\r\n");
+        }
+
+        return sb.toString();
+    }
+
+    private List<Expense> filterByDateRange(List<Expense> expenses, Instant start, Instant end) {
+        if (start == null && end == null) {
+            return expenses;
+        }
+        return expenses.stream()
+                .filter(e -> {
+                    if (start != null && e.getCreatedAt().isBefore(start)) {
+                        return false;
+                    }
+                    if (end != null && e.getCreatedAt().isAfter(end)) {
+                        return false;
+                    }
+                    return true;
+                })
+                .collect(Collectors.toList());
     }
 
     private String formatCategoryName(ExpenseCategory category) {

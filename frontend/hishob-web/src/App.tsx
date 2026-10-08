@@ -11,6 +11,7 @@ import FriendsPage from '@/pages/friends/FriendsPage';
 import FriendDetailPage from '@/pages/friends/FriendDetailPage';
 import PersonalExpensesPage from '@/pages/personal/PersonalExpensesPage';
 import PersonalBalancesPage from '@/pages/personal/PersonalBalancesPage';
+import PersonalReportsPage from '@/pages/personal/PersonalReportsPage';
 import NotificationsPage from '@/pages/notifications/NotificationsPage';
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/friends/:friendId" element={<FriendDetailPage />} />
             <Route path="/expenses" element={<PersonalExpensesPage />} />
             <Route path="/balances" element={<PersonalBalancesPage />} />
+            <Route path="/reports/personal" element={<PersonalReportsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
           </Route>
         </Route>

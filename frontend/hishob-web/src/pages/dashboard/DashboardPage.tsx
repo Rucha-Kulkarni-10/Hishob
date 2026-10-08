@@ -334,7 +334,10 @@ export default function DashboardPage() {
             </div>
             <p className="page-header__sub">Direct expense tracking & balances with friends</p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <Link to="/reports/personal" className="btn btn--ghost btn--sm">
+              Reports
+            </Link>
             <Link to="/expenses" className="btn btn--ghost btn--sm">
               All Expenses
             </Link>

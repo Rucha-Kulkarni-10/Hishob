@@ -21,8 +21,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { deletePersonalExpense, getPersonalExpenses } from '@/services/personalExpenseService';
+
 import { getFriends } from '@/services/friendService';
 import type { PersonalExpenseResponse, SplitType } from '@/types/personalExpenses';
 import {
@@ -316,13 +318,18 @@ export default function PersonalExpensesPage() {
             Track and split expenses directly with individual friends outside of groups.
           </p>
         </div>
-        <button
-          type="button"
-          className="btn btn--primary"
-          onClick={() => setAddOpen(true)}
-        >
-          + Add Personal Expense
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <Link to="/reports/personal" className="btn btn--ghost">
+            📊 View Reports
+          </Link>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => setAddOpen(true)}
+          >
+            + Add Personal Expense
+          </button>
+        </div>
       </header>
 
       {/* Delete confirmation banner */}
