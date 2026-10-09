@@ -11,6 +11,8 @@
 import Modal from '@/components/common/Modal';
 import { type ExpenseResponse, getCategoryMeta } from '@/types/expenses';
 import type { MemberResponse } from '@/types/groups';
+import { useAuth } from '@/hooks/useAuth';
+import ExpenseCommentsSection from '@/components/comments/ExpenseCommentsSection';
 
 interface ExpenseDetailModalProps {
   isOpen: boolean;
@@ -18,6 +20,7 @@ interface ExpenseDetailModalProps {
   expense: ExpenseResponse;
   members: MemberResponse[];
   memberNames: Record<string, string>;
+  currentUserId?: string | null;
 }
 
 function formatDate(iso: string): string {
@@ -52,7 +55,10 @@ export default function ExpenseDetailModal({
   onClose,
   expense,
   memberNames,
+  currentUserId,
 }: ExpenseDetailModalProps) {
+  const { user } = useAuth();
+  const effectiveUserId = currentUserId ?? user?.id ?? null;
   const payerName = memberNames[expense.paidBy] || 'Unknown member';
   const creatorName = memberNames[expense.createdBy] || 'Unknown member';
   const catMeta = getCategoryMeta(expense.category);
@@ -115,6 +121,14 @@ export default function ExpenseDetailModal({
           </tbody>
         </table>
       </div>
+
+      {/* Comments section */}
+      <ExpenseCommentsSection
+        expenseId={expense.id}
+        expenseCreatorId={expense.createdBy}
+        memberNames={memberNames}
+        currentUserId={effectiveUserId}
+      />
 
       {/* Footer meta */}
       <div className="expense-detail__footer">

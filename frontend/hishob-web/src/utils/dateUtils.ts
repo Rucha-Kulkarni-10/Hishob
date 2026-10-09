@@ -45,33 +45,32 @@ export function formatNotificationTime(isoDate: string): string {
  * Do not invent navigation targets if metadata does not support them.
  */
 export function getNotificationTarget(notification: NotificationResponse): string | null {
+  // Handle group notifications
+  if (notification.groupId) {
+    switch (notification.type) {
+      case 'EXPENSE_ADDED':
+      case 'EXPENSE_UPDATED':
+      case 'EXPENSE_DELETED':
+      case 'EXPENSE_COMMENT_ADDED':
+        return `/groups/${notification.groupId}/expenses`;
+      case 'SETTLEMENT_RECORDED':
+        return `/groups/${notification.groupId}/balances`;
+      case 'GROUP_MEMBER_ADDED':
+      default:
+        return `/groups/${notification.groupId}`;
+    }
+  }
+
   // Handle personal notification types
   switch (notification.type) {
     case 'PERSONAL_EXPENSE_ADDED':
     case 'PERSONAL_EXPENSE_UPDATED':
     case 'PERSONAL_EXPENSE_DELETED':
+    case 'EXPENSE_COMMENT_ADDED':
       return '/expenses';
     case 'PERSONAL_SETTLEMENT_RECORDED':
       return '/balances';
     default:
-      break;
-  }
-
-  // Handle group notifications
-  if (!notification.groupId) {
-    return null;
-  }
-
-  switch (notification.type) {
-    case 'EXPENSE_ADDED':
-    case 'EXPENSE_UPDATED':
-    case 'EXPENSE_DELETED':
-      return `/groups/${notification.groupId}/expenses`;
-    case 'SETTLEMENT_RECORDED':
-      return `/groups/${notification.groupId}/balances`;
-    case 'GROUP_MEMBER_ADDED':
-      return `/groups/${notification.groupId}`;
-    default:
-      return `/groups/${notification.groupId}`;
+      return null;
   }
 }

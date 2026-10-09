@@ -17,7 +17,8 @@ export type NotificationType =
   | 'PERSONAL_EXPENSE_ADDED'
   | 'PERSONAL_EXPENSE_UPDATED'
   | 'PERSONAL_EXPENSE_DELETED'
-  | 'PERSONAL_SETTLEMENT_RECORDED';
+  | 'PERSONAL_SETTLEMENT_RECORDED'
+  | 'EXPENSE_COMMENT_ADDED';
 
 /** Notification as returned by the backend GET /api/notifications. */
 export interface NotificationResponse {

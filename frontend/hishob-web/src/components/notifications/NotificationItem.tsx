@@ -56,6 +56,16 @@ function renderNotificationIcon(type: NotificationType) {
           <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
         </svg>
       );
+    case 'EXPENSE_COMMENT_ADDED':
+      return (
+        <svg viewBox="0 0 20 20" fill="currentColor" width="16" height="16" aria-hidden="true">
+          <path
+            fillRule="evenodd"
+            d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zm-5 0h-2v2h2V9z"
+            clipRule="evenodd"
+          />
+        </svg>
+      );
     case 'SETTLEMENT_RECORDED':
     case 'PERSONAL_SETTLEMENT_RECORDED':
       return (

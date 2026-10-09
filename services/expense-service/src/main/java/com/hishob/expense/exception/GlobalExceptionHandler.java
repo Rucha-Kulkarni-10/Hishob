@@ -23,6 +23,12 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
     }
 
+    @ExceptionHandler(ExpenseCommentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleExpenseCommentNotFound(
+            ExpenseCommentNotFoundException ex, HttpServletRequest request) {
+        return build(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(PermissionDeniedException.class)
     public ResponseEntity<ErrorResponse> handlePermissionDenied(
             PermissionDeniedException ex, HttpServletRequest request) {

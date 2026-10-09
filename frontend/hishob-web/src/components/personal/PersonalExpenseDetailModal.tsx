@@ -12,6 +12,7 @@
 import Modal from '@/components/common/Modal';
 import type { PersonalExpenseResponse } from '@/types/personalExpenses';
 import { getCategoryMeta } from '@/types/expenses';
+import ExpenseCommentsSection from '@/components/comments/ExpenseCommentsSection';
 
 interface PersonalExpenseDetailModalProps {
   isOpen: boolean;
@@ -153,6 +154,14 @@ export default function PersonalExpenseDetailModal({
           </tbody>
         </table>
       </div>
+
+      {/* Comments section */}
+      <ExpenseCommentsSection
+        expenseId={expense.id}
+        expenseCreatorId={expense.createdBy}
+        memberNames={memberNames}
+        currentUserId={currentUserId}
+      />
 
       {/* Footer meta */}
       <div className="expense-detail__footer">

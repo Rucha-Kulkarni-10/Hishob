@@ -59,6 +59,14 @@ public class Expense {
     )
     private List<ExpenseSplit> splits = new ArrayList<>();
 
+    @OneToMany(
+            mappedBy = "expense",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true,
+            fetch = FetchType.LAZY
+    )
+    private List<ExpenseComment> comments = new ArrayList<>();
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -170,6 +178,19 @@ public class Expense {
 
     public void setSplits(List<ExpenseSplit> splits) {
         this.splits = splits;
+    }
+
+    public List<ExpenseComment> getComments() {
+        return comments;
+    }
+
+    public void setComments(List<ExpenseComment> comments) {
+        this.comments = comments;
+    }
+
+    public void addComment(ExpenseComment comment) {
+        comments.add(comment);
+        comment.setExpense(this);
     }
 
     public Instant getCreatedAt() {
