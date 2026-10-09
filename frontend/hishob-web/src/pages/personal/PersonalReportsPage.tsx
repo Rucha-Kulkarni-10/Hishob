@@ -20,8 +20,9 @@ import type { Friend } from '@/types/friends';
 import { getErrorMessage } from '@/utils/errorUtils';
 import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
-import CategorySpendingBreakdown from '@/components/reports/CategorySpendingBreakdown';
-import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
+import InteractiveDonutChart from '@/components/reports/InteractiveDonutChart';
+import InteractiveTrendLineChart from '@/components/reports/InteractiveTrendLineChart';
+import ParticipantComparisonChart from '@/components/reports/ParticipantComparisonChart';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -32,19 +33,6 @@ function formatINR(val: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(val);
-}
-
-function resolveFriendDisplayName(userId: string, friends: Friend[]): string {
-  const friend = friends.find((f) => f.userId.toLowerCase() === userId.toLowerCase());
-  if (friend) {
-    if (friend.name && friend.name.trim() && !UUID_REGEX.test(friend.name.trim())) {
-      return friend.name.trim();
-    }
-    if (friend.email && friend.email.trim() && !UUID_REGEX.test(friend.email.trim())) {
-      return friend.email.trim();
-    }
-  }
-  return 'Unknown member';
 }
 
 export default function PersonalReportsPage() {
@@ -159,6 +147,21 @@ export default function PersonalReportsPage() {
 
   const hasExpenses = analytics && analytics.expenseCount > 0;
   const friendSpendingList = useMemo(() => analytics?.friendSpending ?? [], [analytics]);
+
+  const friendNamesMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const f of friends) {
+      const name =
+        f.name && f.name.trim() && !UUID_REGEX.test(f.name.trim())
+          ? f.name.trim()
+          : f.email && f.email.trim() && !UUID_REGEX.test(f.email.trim())
+          ? f.email.trim()
+          : 'Unknown member';
+      map[f.userId] = name;
+      map[f.userId.toLowerCase()] = name;
+    }
+    return map;
+  }, [friends]);
 
   if (pageLoading) {
     return <LoadingState label="Loading personal reports…" height="lg" />;
@@ -409,7 +412,11 @@ export default function PersonalReportsPage() {
             {analyticsLoading ? (
               <LoadingState label="Computing category breakdown…" height="sm" />
             ) : (
-              <CategorySpendingBreakdown categorySpending={analytics?.categorySpending ?? []} />
+              <InteractiveDonutChart
+                categorySpending={analytics?.categorySpending ?? []}
+                totalAmount={Number(analytics?.totalSpending ?? 0)}
+                title="Personal Spending by Category"
+              />
             )}
           </section>
 
@@ -424,64 +431,14 @@ export default function PersonalReportsPage() {
 
             {analyticsLoading ? (
               <LoadingState label="Computing friend spending…" height="sm" />
-            ) : friendSpendingList.length === 0 ? (
-              <p className="report-empty-sub">No friend spending data in this range.</p>
             ) : (
-              <div className="category-spending-list" role="region" aria-label="Friend spending list">
-                {friendSpendingList.map((item) => {
-                  const friendName = resolveFriendDisplayName(item.friendUserId, friends);
-                  const initial = (friendName.charAt(0) || '?').toUpperCase();
-                  const total = Number(item.totalSpending);
-                  const userShare = Number(item.userShare ?? 0);
-                  const friendShare = Number(item.friendShare ?? 0);
-
-                  return (
-                    <div key={item.friendUserId} className="category-spending-item" style={{ padding: '0.875rem' }}>
-                      <div className="category-spending-item__header" style={{ marginBottom: '0.25rem' }}>
-                        <div className="category-spending-item__info" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <div
-                            className="friend-balance-card__avatar"
-                            style={{ width: '2rem', height: '2rem', fontSize: '0.85rem' }}
-                          >
-                            {initial}
-                          </div>
-                          <div>
-                            <Link
-                              to={`/friends/${item.friendUserId}`}
-                              style={{ fontWeight: 600, color: 'var(--color-text)', textDecoration: 'none' }}
-                            >
-                              {friendName}
-                            </Link>
-                            <span className="category-spending-item__count" style={{ marginLeft: '0.5rem' }}>
-                              ({item.expenseCount} expense{item.expenseCount !== 1 ? 's' : ''})
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="category-spending-item__stats">
-                          <span className="category-spending-item__amount">{formatINR(total)}</span>
-                        </div>
-                      </div>
-
-                      {/* Shares breakdown */}
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          fontSize: 'var(--font-size-xs)',
-                          color: 'var(--color-text-muted)',
-                          marginTop: '0.4rem',
-                          paddingTop: '0.4rem',
-                          borderTop: '1px dashed var(--color-border)',
-                        }}
-                      >
-                        <span>Your Share: <strong style={{ color: 'var(--color-text)' }}>{formatINR(userShare)}</strong></span>
-                        <span>Friend's Share: <strong style={{ color: 'var(--color-text)' }}>{formatINR(friendShare)}</strong></span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <ParticipantComparisonChart
+                mode="PERSONAL"
+                items={friendSpendingList}
+                friendNames={friendNamesMap}
+                title="Spending by Friend"
+                emptyMessage="No friend spending data in this range."
+              />
             )}
           </section>
 
@@ -497,7 +454,10 @@ export default function PersonalReportsPage() {
             {analyticsLoading ? (
               <LoadingState label="Computing monthly timeline…" height="sm" />
             ) : (
-              <MonthlyTrendChart monthlyTrends={analytics?.monthlyTrends ?? []} />
+              <InteractiveTrendLineChart
+                monthlyTrends={analytics?.monthlyTrends ?? []}
+                title="Personal Monthly Spending Trends"
+              />
             )}
           </section>
         </>

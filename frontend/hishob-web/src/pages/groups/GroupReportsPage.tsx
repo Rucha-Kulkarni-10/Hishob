@@ -26,9 +26,9 @@ import { getErrorMessage } from '@/utils/errorUtils';
 import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import SpendingOverviewCards from '@/components/reports/SpendingOverviewCards';
-import MemberSpendingBar from '@/components/reports/MemberSpendingBar';
-import MonthlyTrendChart from '@/components/reports/MonthlyTrendChart';
-import CategorySpendingBreakdown from '@/components/reports/CategorySpendingBreakdown';
+import InteractiveDonutChart from '@/components/reports/InteractiveDonutChart';
+import InteractiveTrendLineChart from '@/components/reports/InteractiveTrendLineChart';
+import ParticipantComparisonChart from '@/components/reports/ParticipantComparisonChart';
 import ReportFilters from '@/components/reports/ReportFilters';
 
 const USER_PREFIX_RE = /^User-([0-9a-fA-F]{8})$/;
@@ -487,8 +487,9 @@ export default function GroupReportsPage() {
         {analyticsLoading ? (
           <LoadingState label="Computing member spending…" height="sm" />
         ) : (
-          <MemberSpendingBar
-            memberSpending={filteredMemberSpending}
+          <ParticipantComparisonChart
+            mode="GROUP"
+            items={filteredMemberSpending}
             memberNames={memberNames}
             currentUserId={user?.id ?? null}
           />
@@ -507,7 +508,7 @@ export default function GroupReportsPage() {
         {analyticsLoading ? (
           <LoadingState label="Computing monthly timeline…" height="sm" />
         ) : (
-          <MonthlyTrendChart monthlyTrends={analytics?.monthlyTrends ?? []} />
+          <InteractiveTrendLineChart monthlyTrends={analytics?.monthlyTrends ?? []} />
         )}
       </section>
 
@@ -523,7 +524,10 @@ export default function GroupReportsPage() {
         {analyticsLoading ? (
           <LoadingState label="Computing category spending…" height="sm" />
         ) : (
-          <CategorySpendingBreakdown categorySpending={analytics?.categorySpending ?? []} />
+          <InteractiveDonutChart
+            categorySpending={analytics?.categorySpending ?? []}
+            totalAmount={Number(analytics?.totalSpending ?? 0)}
+          />
         )}
       </section>
     </div>

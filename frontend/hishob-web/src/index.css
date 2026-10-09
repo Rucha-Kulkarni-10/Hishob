@@ -4021,3 +4021,527 @@ button { cursor: pointer; font-family: inherit; }
   transition: width var(--transition-normal, 0.3s ease);
 }
 
+/* ══════════════════════════════════════════════════════════════
+   PHASE 20D — Interactive Charts & Analytics Foundation
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Interactive Donut Chart ────────────────────────────────── */
+.interactive-donut-chart {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 0.75rem);
+  padding: var(--space-5, 1.25rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.interactive-donut-chart--empty {
+  text-align: center;
+  padding: var(--space-8, 2rem) var(--space-4, 1rem);
+}
+
+.interactive-donut-chart__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.interactive-donut-chart__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  margin: 0;
+}
+
+.interactive-donut-chart__body {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) 1fr;
+  gap: var(--space-5, 1.25rem);
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .interactive-donut-chart__body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+}
+
+.interactive-donut-chart__graphic-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.interactive-donut-chart__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.interactive-donut-chart__segment {
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease, filter 0.2s ease;
+  transform-origin: 120px 120px;
+}
+
+.interactive-donut-chart__segment:hover,
+.interactive-donut-chart__segment--active {
+  transform: scale(1.04);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.18));
+  opacity: 1;
+}
+
+.interactive-donut-chart__segment--muted {
+  opacity: 0.35;
+}
+
+.interactive-donut-chart__center-icon {
+  font-size: 1.4rem;
+}
+
+.interactive-donut-chart__center-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  fill: var(--color-text-muted, #64748b);
+}
+
+.interactive-donut-chart__center-sub {
+  font-size: 0.75rem;
+  font-weight: 600;
+  fill: var(--color-text-muted, #64748b);
+}
+
+.interactive-donut-chart__center-total,
+.interactive-donut-chart__center-val {
+  font-size: 1.05rem;
+  font-weight: 800;
+  fill: var(--color-text, #0f172a);
+}
+
+.interactive-donut-chart__center-hint {
+  font-size: 0.6875rem;
+  fill: var(--color-text-light, #94a3b8);
+}
+
+.interactive-donut-chart__center-pct {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  fill: var(--color-primary, #6366f1);
+}
+
+/* Legend items */
+.interactive-donut-chart__legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.interactive-donut-chart__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  font-size: 0.8125rem;
+  width: 100%;
+  color: var(--color-text, #0f172a);
+}
+
+.interactive-donut-chart__legend-item:hover,
+.interactive-donut-chart__legend-item:focus-visible,
+.interactive-donut-chart__legend-item--selected {
+  background: var(--color-surface, #ffffff);
+  border-color: var(--color-primary, #6366f1);
+  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.12);
+  transform: translateX(2px);
+  outline: none;
+}
+
+.interactive-donut-chart__legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.interactive-donut-chart__legend-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.interactive-donut-chart__legend-name {
+  font-weight: 600;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.interactive-donut-chart__legend-amount {
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+}
+
+.interactive-donut-chart__legend-pct {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  min-width: 38px;
+  text-align: right;
+}
+
+.interactive-donut-chart__empty-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-4, 1rem);
+}
+
+.interactive-donut-chart__empty-text {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+/* ── Interactive Monthly Trend Chart ────────────────────────── */
+.interactive-trend-chart {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 0.75rem);
+  padding: var(--space-5, 1.25rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+  outline: none;
+}
+
+.interactive-trend-chart:focus-visible {
+  border-color: var(--color-primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+.interactive-trend-chart__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+}
+
+.interactive-trend-chart__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  margin: 0;
+}
+
+.interactive-trend-chart__sub {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #64748b);
+  margin: var(--space-1, 0.25rem) 0 0;
+}
+
+.interactive-trend-chart__detail-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6, 1.5rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  flex-wrap: wrap;
+}
+
+.interactive-trend-chart__detail-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.interactive-trend-chart__detail-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted, #64748b);
+}
+
+.interactive-trend-chart__detail-val {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text, #0f172a);
+}
+
+.interactive-trend-chart__detail-amount {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--color-primary, #6366f1);
+}
+
+.interactive-trend-chart__svg-container {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.interactive-trend-chart__svg {
+  width: 100%;
+  min-width: 480px;
+  height: auto;
+  display: block;
+}
+
+.interactive-trend-chart__axis-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  fill: var(--color-text-muted, #64748b);
+}
+
+.interactive-trend-chart__x-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  fill: var(--color-text-muted, #64748b);
+  transition: fill 0.15s ease;
+}
+
+.interactive-trend-chart__x-label:hover,
+.interactive-trend-chart__x-label--active {
+  fill: var(--color-primary, #6366f1);
+  font-weight: 700;
+}
+
+.interactive-trend-chart__bar-elem {
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.interactive-trend-chart__bar-elem:hover {
+  opacity: 1;
+}
+
+.interactive-trend-chart__point-dot {
+  transition: r 0.15s ease, stroke-width 0.15s ease;
+  cursor: pointer;
+}
+
+.interactive-trend-chart__point-group:hover .interactive-trend-chart__point-dot {
+  r: 6;
+}
+
+.interactive-trend-chart__empty {
+  text-align: center;
+  padding: var(--space-8, 2rem) var(--space-4, 1rem);
+}
+
+.interactive-trend-chart__empty-text {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+/* ── Participant Comparison Chart ───────────────────────────── */
+.participant-comparison {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 0.75rem);
+  padding: var(--space-5, 1.25rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.05));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.participant-comparison__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.participant-comparison__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-text, #0f172a);
+  margin: 0;
+}
+
+.participant-comparison__sub {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #64748b);
+  margin: var(--space-1, 0.25rem) 0 0;
+}
+
+.participant-comparison__legend-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4, 1rem);
+  padding-bottom: var(--space-2, 0.5rem);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.participant-comparison__legend-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+}
+
+.participant-comparison__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.participant-comparison__legend-dot--primary {
+  background: var(--color-primary, #6366f1);
+}
+
+.participant-comparison__legend-dot--secondary {
+  background: #38bdf8;
+}
+
+.participant-comparison__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+.participant-comparison__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+}
+
+.participant-comparison__card:hover,
+.participant-comparison__card:focus-visible,
+.participant-comparison__card--hovered {
+  background: var(--color-surface, #ffffff);
+  border-color: var(--color-primary, #6366f1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.participant-comparison__card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
+.participant-comparison__identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.participant-comparison__name {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  color: var(--color-text, #0f172a);
+}
+
+.participant-comparison__you {
+  font-size: 0.6875rem;
+  padding: 0.1rem 0.4rem;
+}
+
+.participant-comparison__subtext {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #64748b);
+}
+
+.participant-comparison__metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2, 0.5rem);
+  font-size: 0.8125rem;
+}
+
+.participant-comparison__metric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.participant-comparison__metric-label {
+  color: var(--color-text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.participant-comparison__metric-value--primary {
+  color: var(--color-primary, #6366f1);
+  font-weight: 700;
+}
+
+.participant-comparison__metric-value--secondary {
+  color: #0284c7;
+  font-weight: 700;
+}
+
+.participant-comparison__bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.participant-comparison__track {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-full, 9999px);
+  overflow: hidden;
+}
+
+[data-theme='dark'] .participant-comparison__track {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.participant-comparison__fill--primary {
+  height: 100%;
+  background: var(--color-primary, #6366f1);
+  border-radius: var(--radius-full, 9999px);
+  transition: width 0.3s ease;
+}
+
+.participant-comparison__fill--secondary {
+  height: 100%;
+  background: #38bdf8;
+  border-radius: var(--radius-full, 9999px);
+  transition: width 0.3s ease;
+}
+
+.participant-comparison--empty {
+  text-align: center;
+  padding: var(--space-8, 2rem) var(--space-4, 1rem);
+}
+
+.participant-comparison__empty-text {
+  font-size: 0.875rem;
+  color: var(--color-text-muted, #64748b);
+}
