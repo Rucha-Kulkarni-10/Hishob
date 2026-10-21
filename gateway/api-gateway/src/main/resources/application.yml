@@ -1,35 +1,98 @@
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 spring:
   application:
     name: api-gateway
   config:
-    import: "optional:configserver:http://localhost:8888"
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
   cloud:
     gateway:
-      # ── CORS ─────────────────────────────────────────────────────────────────
-      # NOTE: CORS is handled programmatically in ApiGatewayApplication via the
-      # CorsWebFilter bean. The YAML globalcors section is intentionally absent
-      # to prevent double-processing in Spring Cloud Gateway / WebFlux.
-      #
-      # Allowed origin (dev):  http://localhost:5173
-      # Allowed methods:       GET, POST, PUT, DELETE, OPTIONS
-      # Allowed headers:       Content-Type, Authorization
-      # Credentials:           false (Bearer JWT, no cookies)
-      #
-      # X-Internal-Token is intentionally never listed — it is a backend-only
-      # service-to-service credential and must never be sent from the browser.
-      #
-      # NOTE: Routes are externalized to the Spring Cloud Config Server repository
-      # under api-gateway.yml (both file: and classpath: mirrors). Loading routes
-      # from the higher-precedence Config Server import avoids Spring Boot 4's
-      # indexed-list collection binder treating the Config Server PropertySource
-      # (with zero routes) as authoritative, which previously resulted in 404s.
+      server:
+        webflux:
+          routes:
+            - id: auth-service
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/auth/**
+            - id: auth-service-friends-core
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/friends/requests/**
+            - id: auth-service-friends-list
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/friends
+            - id: auth-service-friends-block
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/friends/{targetUserId}/block
+            - id: auth-service-friends-remove
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/friends/{friendUserId}
+                - Method=DELETE
+            - id: auth-service-users
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/users/**
+            - id: expense-service-personal-expenses
+              uri: ${EXPENSE_SERVICE_URL:lb://expense-service}
+              predicates:
+                - Path=/api/personal-expenses/**
+            - id: expense-service-friend-expenses
+              uri: ${EXPENSE_SERVICE_URL:lb://expense-service}
+              predicates:
+                - Path=/api/friends/*/expenses/**
+            - id: expense-service-expenses
+              uri: ${EXPENSE_SERVICE_URL:lb://expense-service}
+              predicates:
+                - Path=/api/expenses/**
+            - id: expense-service-group-expenses
+              uri: ${EXPENSE_SERVICE_URL:lb://expense-service}
+              predicates:
+                - Path=/api/groups/*/expenses/**
+            - id: balance-service-personal
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/personal-balances/**
+            - id: balance-service-friend-balance
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/friends/*/balance
+            - id: balance-service
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/groups/*/balances
+            - id: settlement-service-personal
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/personal-settlements/**
+            - id: settlement-service-friend-settlements
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/friends/*/settlements
+            - id: settlement-service-history
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/groups/*/settlements/history
+            - id: settlement-service
+              uri: ${SETTLEMENT_SERVICE_URL:lb://settlement-service}
+              predicates:
+                - Path=/api/groups/*/settlements
+            - id: notification-service
+              uri: ${AUTH_SERVICE_URL:lb://auth-service}
+              predicates:
+                - Path=/api/notifications/**
+            - id: expense-service-groups
+              uri: ${EXPENSE_SERVICE_URL:lb://expense-service}
+              predicates:
+                - Path=/api/groups/**
 
 eureka:
   client:
-    register-with-eureka: true
-    fetch-registry: true
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}

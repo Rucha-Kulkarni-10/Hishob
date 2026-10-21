@@ -10,8 +10,26 @@
  *   - Fall back to a generic message for network errors.
  */
 
-import axios from 'axios';
+import axios, { isAxiosError } from 'axios';
 import type { ApiError } from '@/types/auth';
+
+export { isAxiosError };
+
+/**
+ * Detects whether an error represents an unverified email rejection from the backend (HTTP 403).
+ */
+export function isEmailNotVerifiedError(error: unknown): boolean {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as ApiError | undefined;
+    const status = error.response?.status;
+    return (
+      status === 403 &&
+      typeof data?.message === 'string' &&
+      data.message.toLowerCase().includes('not verified')
+    );
+  }
+  return false;
+}
 
 /**
  * Returns a user-friendly error message for a caught error.

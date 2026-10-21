@@ -1,27 +1,35 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppLayout from '@/components/layout/AppLayout';
+import LoadingState from '@/components/common/LoadingState';
 import { AuthProvider } from '@/context/AuthContext';
-import DashboardPage from '@/pages/dashboard/DashboardPage';
-import GroupsPage from '@/pages/groups/GroupsPage';
-import GroupDetailsPage from '@/pages/groups/GroupDetailsPage';
-import GroupExpensesPage from '@/pages/groups/GroupExpensesPage';
-import GroupBalancesPage from '@/pages/groups/GroupBalancesPage';
-import GroupReportsPage from '@/pages/groups/GroupReportsPage';
-import FriendsPage from '@/pages/friends/FriendsPage';
-import FriendDetailPage from '@/pages/friends/FriendDetailPage';
-import PersonalExpensesPage from '@/pages/personal/PersonalExpensesPage';
-import PersonalBalancesPage from '@/pages/personal/PersonalBalancesPage';
-import PersonalReportsPage from '@/pages/personal/PersonalReportsPage';
-import NotificationsPage from '@/pages/notifications/NotificationsPage';
-import LoginPage from '@/pages/auth/LoginPage';
-import RegisterPage from '@/pages/auth/RegisterPage';
 import ProtectedRoute from '@/routes/ProtectedRoute';
 import PublicRoute from '@/routes/PublicRoute';
+
+const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
+const GroupsPage = lazy(() => import('@/pages/groups/GroupsPage'));
+const GroupDetailsPage = lazy(() => import('@/pages/groups/GroupDetailsPage'));
+const GroupExpensesPage = lazy(() => import('@/pages/groups/GroupExpensesPage'));
+const GroupBalancesPage = lazy(() => import('@/pages/groups/GroupBalancesPage'));
+const GroupReportsPage = lazy(() => import('@/pages/groups/GroupReportsPage'));
+const FriendsPage = lazy(() => import('@/pages/friends/FriendsPage'));
+const FriendDetailPage = lazy(() => import('@/pages/friends/FriendDetailPage'));
+const PersonalExpensesPage = lazy(() => import('@/pages/personal/PersonalExpensesPage'));
+const PersonalBalancesPage = lazy(() => import('@/pages/personal/PersonalBalancesPage'));
+const PersonalReportsPage = lazy(() => import('@/pages/personal/PersonalReportsPage'));
+const NotificationsPage = lazy(() => import('@/pages/notifications/NotificationsPage'));
+const LoginPage = lazy(() => import('@/pages/auth/LoginPage'));
+const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'));
+const VerifyEmailPage = lazy(() => import('@/pages/auth/VerifyEmailPage'));
 
 export default function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <Suspense fallback={<LoadingState height="lg" label="Loading…" />}>
+        <Routes>
+        {/* Email verification: accessible without authentication checks so tokens are never discarded */}
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
+
         {/* Public routes: redirect authenticated users to dashboard */}
         <Route element={<PublicRoute />}>
           <Route path="/login" element={<LoginPage />} />
@@ -50,6 +58,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      </Suspense>
     </AuthProvider>
   );
 }

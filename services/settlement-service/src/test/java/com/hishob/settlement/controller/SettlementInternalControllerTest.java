@@ -1,8 +1,8 @@
 package com.hishob.settlement.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hishob.settlement.client.BalanceServiceClient;
 import com.hishob.settlement.client.GroupServiceClient;
+import com.hishob.settlement.service.BalanceCalculationService;
 import com.hishob.settlement.entity.Settlement;
 import com.hishob.settlement.entity.SettlementStatus;
 import com.hishob.settlement.repository.SettlementRepository;
@@ -74,7 +74,7 @@ class SettlementInternalControllerTest {
     private GroupServiceClient groupServiceClient;
 
     @MockitoBean
-    private BalanceServiceClient balanceServiceClient;
+    private BalanceCalculationService balanceCalculationService;
 
     private MockMvc mockMvc;
 
@@ -123,8 +123,11 @@ class SettlementInternalControllerTest {
         com.hishob.settlement.dto.InternalBalanceData bTo = new com.hishob.settlement.dto.InternalBalanceData();
         bTo.setUserId(toUserId);
         bTo.setNetBalance(new java.math.BigDecimal("1000.00"));
-        org.mockito.Mockito.when(balanceServiceClient.getGroupBalances(groupId))
-                .thenReturn(java.util.List.of(bFrom, bTo));
+        org.mockito.Mockito.when(balanceCalculationService.calculateGroupBalancesInternal(groupId))
+                .thenReturn(new com.hishob.settlement.dto.GroupBalanceResponse(groupId, java.util.List.of(
+                        new com.hishob.settlement.dto.UserBalanceResponse(fromUserId, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, new java.math.BigDecimal("-1000.00"), null),
+                        new com.hishob.settlement.dto.UserBalanceResponse(toUserId, java.math.BigDecimal.ZERO, java.math.BigDecimal.ZERO, new java.math.BigDecimal("1000.00"), null)
+                )));
 
         String body = objectMapper.writeValueAsString(
                 Map.of("toUserId", toUserId, "amount", amount));

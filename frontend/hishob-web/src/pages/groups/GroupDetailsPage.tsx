@@ -21,7 +21,7 @@ import EmptyState from '@/components/common/EmptyState';
 import { getGroupDetail, listMembers } from '@/services/groupService';
 import type { GroupResponse, MemberResponse, MemberRole } from '@/types/groups';
 import { useAuth } from '@/hooks/useAuth';
-import { getErrorMessage } from '@/utils/errorUtils';
+import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
 
 function formatDate(iso: string): string {
   try {
@@ -69,20 +69,18 @@ export default function GroupDetailsPage() {
       setGroup(g);
       setMembers(ms);
     } catch (err: unknown) {
-      import('axios').then(({ default: axios }) => {
-        if (axios.isAxiosError(err)) {
-          const status = err.response?.status;
-          if (status === 404) {
-            setIs404(true);
-          } else if (status === 403) {
-            setIs403(true);
-          } else {
-            setError(getErrorMessage(err));
-          }
+      if (isAxiosError(err)) {
+        const status = err.response?.status;
+        if (status === 404) {
+          setIs404(true);
+        } else if (status === 403) {
+          setIs403(true);
         } else {
           setError(getErrorMessage(err));
         }
-      });
+      } else {
+        setError(getErrorMessage(err));
+      }
     } finally {
       setIsLoading(false);
     }

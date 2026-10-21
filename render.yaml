@@ -1,0 +1,128 @@
+# =============================================================================
+# HISHOB Render Blueprint Specification
+# =============================================================================
+# Architecture:
+#   - 1 PostgreSQL Free database (4 isolated schemas initialized manually)
+#   - 4 Docker Web Services on Free plan (API Gateway + 3 consolidated backend services)
+#   - Inter-service REST calls routed via public HTTPS URLs
+#   - Dynamic secret generation (JWT_SECRET, INTERNAL_SERVICE_TOKEN)
+# =============================================================================
+
+version: "1"
+
+databases:
+  # WARNING: Render's free PostgreSQL tier is deleted after 30 days and is not
+  # durable production storage; a paid database plan (or external managed DB)
+  # is a required hosting decision before real user data relies on this stack.
+  - name: hishob-postgres
+    databaseName: hishob_db
+    user: hishob_user
+    plan: free
+    region: oregon
+
+envVarGroups:
+  - name: hishob-shared
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INTERNAL_SERVICE_TOKEN
+        generateValue: true
+      - key: DB_HOST
+        fromDatabase:
+          name: hishob-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: hishob-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: hishob-postgres
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: hishob-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: hishob-postgres
+          property: password
+      - key: DB_SSLMODE
+        value: require
+      - key: EUREKA_CLIENT_ENABLED
+        value: "false"
+      - key: EUREKA_REGISTER_WITH_EUREKA
+        value: "false"
+      - key: EUREKA_FETCH_REGISTRY
+        value: "false"
+      - key: AUTH_SERVICE_URL
+        value: https://hishob-auth-service.onrender.com
+      - key: EXPENSE_SERVICE_URL
+        value: https://hishob-expense-service.onrender.com
+      - key: SETTLEMENT_SERVICE_URL
+        value: https://hishob-settlement-service.onrender.com
+
+services:
+  # ---------------------------------------------------------------------------
+  # 1. API Gateway
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: hishob-gateway
+    env: docker
+    dockerfilePath: ./gateway/api-gateway/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: hishob-shared
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://hishob-web.vercel.app,http://localhost:5173"
+
+  # ---------------------------------------------------------------------------
+  # 2. Auth Service
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: hishob-auth-service
+    env: docker
+    dockerfilePath: ./services/auth-service/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: hishob-shared
+      - key: DB_SCHEMA
+        value: hishob_auth
+
+  # ---------------------------------------------------------------------------
+  # 3. Expense Service (also owns groups and memberships)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: hishob-expense-service
+    env: docker
+    dockerfilePath: ./services/expense-service/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: hishob-shared
+      - key: DB_SCHEMA
+        value: hishob_expense
+
+  # ---------------------------------------------------------------------------
+  # 4. Settlement Service (owns balances + settlements)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: hishob-settlement-service
+    env: docker
+    dockerfilePath: ./services/settlement-service/Dockerfile
+    dockerContext: .
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: hishob-shared
+      - key: DB_SCHEMA
+        value: hishob_settlement

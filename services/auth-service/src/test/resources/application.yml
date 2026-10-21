@@ -28,3 +28,16 @@ eureka:
 jwt:
   secret: d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026
   expiration: 86400000
+
+mailgun:
+  enabled: false
+
+auth:
+  email-verification:
+    required: false
+    token-validity-seconds: 86400
+    resend-cooldown-seconds: 60
+    frontend-url: http://localhost:3000
+    verification-path: /verify-email
+
+

@@ -10,9 +10,11 @@ HISHOB is being built from a clean microservices architecture from scratch.
 
 ## Development Status
 
+> **Current architecture (Phase 3 consolidation):** the active backend is API Gateway + Auth (incl. notifications) + Expense (incl. groups/memberships) + Settlement (incl. balances). The phase notes below are historical records of the original standalone services; where they describe cross-service HTTP hops (Balance↔Settlement, Group Service reads), those calls now happen inside the consolidated services. See ARCHITECTURE.md and DEPLOYMENT_RENDER.md for the current topology.
+
 **Phase 10 — React Frontend Foundation** *(completed)*
 
-React + Vite + TypeScript frontend foundation implemented in `frontend/hishob-web/`. Includes authentication UI (login, registration), JWT management via `tokenStorage.ts`, Axios API client configured against the API Gateway, protected/public routing, and a dashboard placeholder. The frontend communicates exclusively with the API Gateway on port 8080 — no microservice is called directly from the browser. CORS is configured at the Gateway to allow `http://localhost:5173`. All backend errors are converted to user-friendly messages; no stack traces are exposed to the browser.
+React + Vite + TypeScript frontend foundation implemented in `frontend/hishob-web/`. Includes authentication UI (login, registration), JWT management via `tokenStorage.ts`, Axios API client configured against the API Gateway, protected/public routing, and a dashboard placeholder. The frontend communicates exclusively with the API Gateway on port 8087 — no microservice is called directly from the browser. CORS is configured at the Gateway to allow `http://localhost:5173`. All backend errors are converted to user-friendly messages; no stack traces are exposed to the browser.
 
 **Settlement/Balance Integration** *(completed)*
 
@@ -91,22 +93,27 @@ The Balance Service is implemented on port 8084 with no database (stateless, on-
 
 ### Infrastructure Services
 
+Config Server and Eureka are **local development only**. Deployed environments (Render free tier) disable them (`EUREKA_CLIENT_ENABLED=false`, `optional:configserver:` import) and drive all routing from environment variables pointing at public HTTPS service URLs.
+
 | Service | Responsibility |
 |---------|---------------|
-| Discovery Server (Eureka) | Service registry and discovery |
-| Config Server | Centralized configuration management |
+| Discovery Server (Eureka) | Service registry and discovery (local dev only) |
+| Config Server | Centralized configuration management (local dev only) |
 | API Gateway | Request routing, CORS, JWT validation |
 
 ### Business Services
 
-| Service | Responsibility |
-|---------|---------------|
-| Auth Service | Registration, login, JWT, user management |
-| Group Service | Group creation, membership management |
-| Expense Service | Shared expense recording, split calculation |
-| Balance Service | Balance computation, debt simplification |
-| Settlement Service | Payment recording, settlement history |
-| Notification Service | In-app notification delivery |
+Consolidated target architecture: the active deployed backend is **Auth, Expense and Settlement** (plus the API Gateway). The Group, Balance and Notification services are merged into Expense, Settlement and Auth respectively; their modules remain in the Maven reactor for local reference only and are no longer deployed or started by `start-hishob.ps1`.
+
+| Service | Responsibility | Deployment status |
+|---------|---------------|-------------------|
+| Auth Service | Registration, login, JWT, user management, in-app notifications | Active (owns notifications) |
+| Expense Service | Group + membership management, shared expense recording, split calculation | Active (owns groups) |
+| Settlement Service | Balance computation, debt simplification, payment recording, settlement history | Active (owns balances) |
+| API Gateway | Request routing, CORS | Active |
+| Group Service | (merged into Expense Service) | Legacy module — not deployed |
+| Balance Service | (merged into Settlement Service) | Legacy module — not deployed |
+| Notification Service | (merged into Auth Service) | Legacy module — not deployed |
 
 ---
 
@@ -128,13 +135,13 @@ npm run dev
 
 Frontend starts at: **http://localhost:5173**
 
-All API requests are routed through the API Gateway at **http://localhost:8080**.
+All API requests are routed through the API Gateway at **http://localhost:8087**.
 
 ### Environment variables
 
 | Variable | Description | Default |
 |----------|-------------|----------|
-| `VITE_API_BASE_URL` | HISHOB API Gateway URL | `http://localhost:8080` |
+| `VITE_API_BASE_URL` | HISHOB API Gateway URL | `http://localhost:8087` |
 
 > **Security:** `VITE_*` variables are bundled into the browser build. Never put JWT secrets, database credentials, or internal service tokens into `VITE_*` variables.
 
@@ -147,14 +154,14 @@ Start in this order: Config Server → Eureka → Auth Service → API Gateway �
 | Config Server | 8888 | Centralized configuration |
 | Eureka Discovery Server | 8761 | Service registration |
 | Auth Service | 8081 | Login, register, /me |
-| API Gateway | 8080 | **The only backend port the frontend calls** |
+| API Gateway | 8087 | **The only backend port the frontend calls** |
 
 ### Authentication flow
 
 ```
 Browser (React Frontend :5173)
   ↓  POST /api/auth/login  or  POST /api/auth/register
-API Gateway :8080
+API Gateway :8087
   ↓  routes /api/auth/** → Auth Service
 Auth Service :8081
   ↓  returns { accessToken, tokenType: "Bearer", user }
@@ -164,7 +171,7 @@ ProtectedRoute  →  /dashboard accessible
 
 Subsequent authenticated requests:
 Axios interceptor (api.ts)  →  Authorization: Bearer <JWT>
-API Gateway :8080  →  microservices
+API Gateway :8087  →  microservices
 ```
 
 ---
@@ -175,11 +182,13 @@ Each business service will own its own PostgreSQL database:
 
 | Service | Database |
 |---------|----------|
-| Auth Service | `hishob_auth` |
-| Group Service | `hishob_group` |
-| Expense Service | `hishob_expense` |
-| Settlement Service | `hishob_settlement` |
-| Notification Service | `hishob_notification` |
+| Auth Service | `hishob_auth` — users and active notifications |
+| Expense Service | `hishob_expense` — authoritative groups, memberships, expenses, splits |
+| Settlement Service | `hishob_settlement` — settlements (balance calculation is stateless) |
+| Group Service | `hishob_group` — legacy store; data copied into `hishob_expense`, no longer written |
+| Notification Service | `hishob_notification` — legacy store; historical rows pending an approved migration |
+
+On Render all services share one PostgreSQL instance with isolated schemas (the free tier is deleted after 30 days — see DEPLOYMENT_RENDER.md).
 
 ---
 
@@ -199,7 +208,7 @@ Each business service will own its own PostgreSQL database:
 | Phase 8 | Balance Service implementation | ✅ Complete |
 | Phase 9 | Settlement Service implementation | ✅ Complete |
 | Phase 10 | React Frontend Foundation | ✅ Complete |
-| Phase 11 | Notification Service implementation | Planned |
+| Phase 11 | Notification Service implementation | ✅ Complete — later merged into Auth Service (standalone module retired from deployment) |
 | Phase 12 | Frontend — Groups, Expenses, Balances, Settlements | Planned |
 | Phase 13 | Docker and deployment | Planned |
 
@@ -227,12 +236,12 @@ HISHOB/
 │   └── api-gateway/                 Request routing and filtering
 │
 ├── services/
-│   ├── auth-service/                Authentication and user management
-│   ├── group-service/               Group and membership management
-│   ├── expense-service/             Expense recording and splitting
-│   ├── balance-service/             Balance calculation and debt simplification
-│   ├── settlement-service/          Settlement recording and history
-│   └── notification-service/        In-app notifications
+│   ├── auth-service/                Authentication, users, notifications
+│   ├── group-service/               Legacy — groups/memberships merged into expense-service (reactor only)
+│   ├── expense-service/             Groups, memberships, expense recording and splitting
+│   ├── balance-service/             Legacy — balance calculation merged into settlement-service (reactor only)
+│   ├── settlement-service/          Balances, settlements and history
+│   └── notification-service/        Legacy — notifications merged into auth-service (reactor only)
 │
 └── frontend/
     └── hishob-web/                  React SPA (Phase 10)

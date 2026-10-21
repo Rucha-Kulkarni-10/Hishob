@@ -30,11 +30,10 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -126,33 +125,23 @@ class GroupControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/groups — creates group with OWNER membership for current user")
-    void testCreateGroup_Success() throws Exception {
-        String token = jwt(ownerId, "owner@test.com");
+    @DisplayName("Frozen for writes: POST /api/groups returns 403 and stores nothing")
+    void testCreateGroup_IsFrozen() throws Exception {
         CreateGroupRequest req = new CreateGroupRequest("Trip to Japan", "Cherry blossom season");
 
         mockMvc.perform(post("/api/groups")
-                        .header("Authorization", "Bearer " + token)
+                        .header("Authorization", "Bearer " + jwt(ownerId, "owner@test.com"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.name", is("Trip to Japan")))
-                .andExpect(jsonPath("$.description", is("Cherry blossom season")))
-                .andExpect(jsonPath("$.createdBy", is(ownerId.toString())));
-    }
-
-    @Test
-    @DisplayName("POST /api/groups — validation failure (blank name) returns 400")
-    void testCreateGroup_ValidationFailure() throws Exception {
-        String token = jwt(ownerId, "owner@test.com");
-        CreateGroupRequest req = new CreateGroupRequest("A", "");
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/groups")
-                        .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.validationErrors.name").isNotEmpty());
+                .andExpect(status().isForbidden());
+
+        assertThat(groupRepository.count()).isZero();
+        assertThat(groupMemberRepository.count()).isZero();
     }
 
     @Test
@@ -215,77 +204,30 @@ class GroupControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/groups/{id}/members — OWNER adds valid target user successfully")
-    void testAddMember_Owner_Success() throws Exception {
-        Group group = createGroupAsOwner();
-        UUID newUserId = UUID.randomUUID();
-        doNothing().when(authServiceClient).validateUserExists(newUserId);
-        org.mockito.Mockito.when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
-                new com.hishob.group.dto.UserSummaryData(newUserId, "New Added User", "added@test.com")
-        ));
-
-        String token = jwt(ownerId, "owner@test.com");
-        AddMemberRequest req = new AddMemberRequest(newUserId);
-
-        mockMvc.perform(post("/api/groups/" + group.getId() + "/members")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.userId", is(newUserId.toString())))
-                .andExpect(jsonPath("$.role", is("MEMBER")))
-                .andExpect(jsonPath("$.name", is("New Added User")))
-                .andExpect(jsonPath("$.email", is("added@test.com")));
-    }
-
-    @Test
-    @DisplayName("POST /api/groups/{id}/members — MEMBER cannot add others (403)")
-    void testAddMember_NonOwner_Forbidden() throws Exception {
+    @DisplayName("Frozen for writes: POST /api/groups/{id}/members returns 403 for OWNER and MEMBER")
+    void testAddMember_IsFrozen() throws Exception {
         Group group = createGroupAsOwner();
         addMember(group.getId(), memberId, MemberRole.MEMBER);
-        String memberToken = jwt(memberId, "member@test.com");
-
         AddMemberRequest req = new AddMemberRequest(UUID.randomUUID());
 
         mockMvc.perform(post("/api/groups/" + group.getId() + "/members")
-                        .header("Authorization", "Bearer " + memberToken)
+                        .header("Authorization", "Bearer " + jwt(ownerId, "owner@test.com"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
                 .andExpect(status().isForbidden());
-    }
-
-    @Test
-    @DisplayName("POST /api/groups/{id}/members — duplicate member returns 409")
-    void testAddMember_Duplicate_Conflict() throws Exception {
-        Group group = createGroupAsOwner();
-        addMember(group.getId(), memberId, MemberRole.MEMBER);
-        String token = jwt(ownerId, "owner@test.com");
-        AddMemberRequest req = new AddMemberRequest(memberId);
 
         mockMvc.perform(post("/api/groups/" + group.getId() + "/members")
-                        .header("Authorization", "Bearer " + token)
+                        .header("Authorization", "Bearer " + jwt(memberId, "member@test.com"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isConflict());
-    }
-
-    @Test
-    @DisplayName("POST /api/groups/{id}/members — invalid target user (not in Auth) returns 400")
-    void testAddMember_InvalidTargetUser() throws Exception {
-        Group group = createGroupAsOwner();
-        UUID badUserId = UUID.randomUUID();
-        doThrow(new com.hishob.group.exception.InvalidTargetUserException("Target user does not exist"))
-                .when(authServiceClient).validateUserExists(badUserId);
-
-        String token = jwt(ownerId, "owner@test.com");
-        AddMemberRequest req = new AddMemberRequest(badUserId);
+                .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/groups/" + group.getId() + "/members")
-                        .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").isNotEmpty());
+                .andExpect(status().isForbidden());
+
+        assertThat(groupMemberRepository.count()).isEqualTo(2);
     }
 
     @Test

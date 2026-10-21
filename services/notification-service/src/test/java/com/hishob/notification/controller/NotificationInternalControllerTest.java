@@ -325,16 +325,37 @@ class NotificationInternalControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    // ── test 14: empty request body returns 400 ─────────────────────────────
+    // ── test 15: personal notifications with null groupId ───────────────────
 
     @Test
-    @DisplayName("14. Empty request body returns 400 Bad Request")
-    void createNotification_emptyBody() throws Exception {
-        mockMvc.perform(post("/internal/notifications")
-                        .header("X-Internal-Token", INTERNAL_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(""))
-                .andExpect(status().isBadRequest());
+    @DisplayName("15. Personal notification types with null groupId can be created successfully")
+    void createNotification_personalTypesNullGroupId() throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        NotificationType[] personalTypes = {
+                NotificationType.PERSONAL_EXPENSE_ADDED,
+                NotificationType.PERSONAL_EXPENSE_UPDATED,
+                NotificationType.PERSONAL_EXPENSE_DELETED,
+                NotificationType.EXPENSE_COMMENT_ADDED,
+                NotificationType.PERSONAL_SETTLEMENT_RECORDED
+        };
+
+        for (NotificationType type : personalTypes) {
+            Map<String, Object> request = Map.of(
+                    "userId", userId.toString(),
+                    "type", type.name(),
+                    "message", "Personal event: " + type.name(),
+                    "metadata", Map.of("personal", "true")
+            );
+
+            mockMvc.perform(post("/internal/notifications")
+                            .header("X-Internal-Token", INTERNAL_TOKEN)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.type", is(type.name())))
+                    .andExpect(jsonPath("$.groupId", nullValue()));
+        }
     }
 
 }

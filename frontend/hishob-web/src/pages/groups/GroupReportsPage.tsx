@@ -22,7 +22,7 @@ import type {
   MemberSpendingSummary,
 } from '@/types/analytics';
 import { useAuth } from '@/hooks/useAuth';
-import { getErrorMessage } from '@/utils/errorUtils';
+import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
 import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import SpendingOverviewCards from '@/components/reports/SpendingOverviewCards';
@@ -198,8 +198,7 @@ export default function GroupReportsPage() {
       setGroup(g);
       setMembers(ms);
     } catch (err: unknown) {
-      const { default: axios } = await import('axios');
-      if (axios.isAxiosError(err)) {
+      if (isAxiosError(err)) {
         const status = err.response?.status;
         if (status === 404) {
           setIs404(true);

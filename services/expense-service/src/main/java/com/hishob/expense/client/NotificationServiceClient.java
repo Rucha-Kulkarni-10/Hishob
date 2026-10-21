@@ -3,8 +3,11 @@ package com.hishob.expense.client;
 import com.hishob.expense.dto.CreateNotificationRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 @Component
@@ -16,12 +19,17 @@ public class NotificationServiceClient {
     private final RestClient restClient;
     private final String internalToken;
 
+    @Autowired
     public NotificationServiceClient(
-            @Value("${hishob.notification-service.base-url:http://localhost:8086}") String baseUrl,
-            @Value("${hishob.notification-service.internal-token:test-token}") String internalToken) {
-        this.restClient = RestClient.builder()
+            @Value("${hishob.auth-service.base-url:http://localhost:8081}") String baseUrl,
+            @Value("${hishob.auth-service.internal-token}") String internalToken) {
+        this(RestClient.builder()
                 .baseUrl(baseUrl)
-                .build();
+                .build(), internalToken);
+    }
+
+    NotificationServiceClient(RestClient restClient, String internalToken) {
+        this.restClient = restClient;
         this.internalToken = internalToken;
     }
 
@@ -33,10 +41,18 @@ public class NotificationServiceClient {
                     .body(request)
                     .retrieve()
                     .toBodilessEntity();
+        } catch (HttpStatusCodeException e) {
+            // Log HTTP status and status text without sensitive tokens or request bodies
+            log.warn("Failed to create notification of type {} for user {}: HTTP {} {}", 
+                    request.getType(), request.getUserId(), e.getStatusCode().value(), e.getStatusText());
+        } catch (ResourceAccessException e) {
+            // Service connectivity or timeout issues
+            log.warn("Notification Service is unreachable when sending {} to user {}: {}", 
+                    request.getType(), request.getUserId(), e.getMessage());
         } catch (Exception e) {
-            // Log but don't fail the main operation
-            log.warn("Failed to create notification for user {}: {}", 
-                    request.getUserId(), e.getMessage());
+            // General fallback: log message without failing main operation
+            log.warn("Failed to create notification of type {} for user {}: {}", 
+                    request.getType(), request.getUserId(), e.getMessage());
         }
     }
 

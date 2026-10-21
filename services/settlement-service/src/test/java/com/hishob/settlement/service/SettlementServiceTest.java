@@ -2,17 +2,21 @@ package com.hishob.settlement.service;
 
 import com.hishob.settlement.algorithm.DebtSimplificationAlgorithm;
 import com.hishob.settlement.client.AuthServiceClient;
-import com.hishob.settlement.client.BalanceServiceClient;
 import com.hishob.settlement.client.GroupServiceClient;
 import com.hishob.settlement.client.NotificationServiceClient;
 import com.hishob.settlement.dto.CreateNotificationRequest;
+import com.hishob.settlement.dto.FriendBalanceResponse;
+import com.hishob.settlement.dto.GroupBalanceResponse;
 import com.hishob.settlement.dto.PersonalDebtSimplificationResponse;
 import com.hishob.settlement.dto.PersonalDebtSimplificationSuggestion;
 import com.hishob.settlement.dto.RecordPersonalSettlementRequest;
 import com.hishob.settlement.dto.RecordSettlementRequest;
 import com.hishob.settlement.dto.SettlementHistoryResponse;
+import com.hishob.settlement.dto.UserBalanceResponse;
+import com.hishob.settlement.service.BalanceCalculationService;
 import com.hishob.settlement.entity.Settlement;
 import com.hishob.settlement.entity.SettlementStatus;
+import com.hishob.settlement.exception.InvalidRecipientException;
 import com.hishob.settlement.repository.SettlementRepository;
 import com.hishob.settlement.dto.InternalBalanceData;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,7 +49,7 @@ class SettlementServiceTest {
     private GroupServiceClient groupServiceClient;
     
     @Mock
-    private BalanceServiceClient balanceServiceClient;
+    private BalanceCalculationService balanceCalculationService;
 
     @Mock
     private AuthServiceClient authServiceClient;
@@ -66,18 +71,19 @@ class SettlementServiceTest {
 
     @BeforeEach
     void setUp() {
-        settlementService = new SettlementService(groupServiceClient, balanceServiceClient, authServiceClient,
+        settlementService = new SettlementService(groupServiceClient, balanceCalculationService, authServiceClient,
                 algorithm, settlementRepository, notificationServiceClient);
         groupId = UUID.randomUUID();
         fromUserId = UUID.randomUUID();
         toUserId = UUID.randomUUID();
     }
 
-    private InternalBalanceData createBalance(UUID userId, BigDecimal netBalance) {
-        InternalBalanceData b = new InternalBalanceData();
-        b.setUserId(userId);
-        b.setNetBalance(netBalance);
-        return b;
+    private UserBalanceResponse createBalance(UUID userId, BigDecimal netBalance) {
+        return new UserBalanceResponse(userId, BigDecimal.ZERO, BigDecimal.ZERO, netBalance, null);
+    }
+
+    private GroupBalanceResponse groupBalances(UserBalanceResponse... balances) {
+        return new GroupBalanceResponse(groupId, List.of(balances));
     }
 
     private PersonalDebtSimplificationResponse personalSimplification(PersonalDebtSimplificationSuggestion... suggestions) {
@@ -95,6 +101,34 @@ class SettlementServiceTest {
         return suggestion;
     }
 
+    private FriendBalanceResponse friendBalance(UUID currentUserId, UUID friendUserId, BigDecimal currentUserNetBalance) {
+        FriendBalanceResponse r = new FriendBalanceResponse();
+        r.setCurrentUserId(currentUserId);
+        r.setFriendUserId(friendUserId);
+        r.setCurrentUserNetBalance(currentUserNetBalance);
+        r.setFriendNetBalance(currentUserNetBalance.negate());
+        if (currentUserNetBalance.compareTo(BigDecimal.ZERO) < 0) {
+            r.setCurrentUserStatus("OWE");
+            r.setFriendStatus("GET_BACK");
+            r.setFromUserId(currentUserId);
+            r.setToUserId(friendUserId);
+            r.setAmount(currentUserNetBalance.abs());
+        } else if (currentUserNetBalance.compareTo(BigDecimal.ZERO) > 0) {
+            r.setCurrentUserStatus("GET_BACK");
+            r.setFriendStatus("OWE");
+            r.setFromUserId(friendUserId);
+            r.setToUserId(currentUserId);
+            r.setAmount(currentUserNetBalance);
+        } else {
+            r.setCurrentUserStatus("SETTLED");
+            r.setFriendStatus("SETTLED");
+            r.setFromUserId(null);
+            r.setToUserId(null);
+            r.setAmount(BigDecimal.ZERO);
+        }
+        return r;
+    }
+
     @Test
     @DisplayName("Record settlement: successful settlement within outstanding debt sends notifications")
     void testRecordSettlement_Success() {
@@ -110,7 +144,7 @@ class SettlementServiceTest {
         doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
         doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
 
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
                 createBalance(fromUserId, new BigDecimal("-150.00")),
                 createBalance(toUserId, new BigDecimal("150.00"))
         ));
@@ -149,7 +183,7 @@ class SettlementServiceTest {
         doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
 
         // Payer only owes 100.00
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
                 createBalance(fromUserId, new BigDecimal("-100.00")),
                 createBalance(toUserId, new BigDecimal("100.00"))
         ));
@@ -177,7 +211,7 @@ class SettlementServiceTest {
         doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
 
         // Payer has 0.00 debt
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
                 createBalance(fromUserId, BigDecimal.ZERO),
                 createBalance(toUserId, BigDecimal.ZERO)
         ));
@@ -201,7 +235,7 @@ class SettlementServiceTest {
         doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
         doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
 
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
                 createBalance(fromUserId, new BigDecimal("-100.00")),
                 createBalance(toUserId, new BigDecimal("100.00"))
         ));
@@ -233,8 +267,8 @@ class SettlementServiceTest {
         saved.setCreatedAt(Instant.now());
 
         doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
-        when(balanceServiceClient.getPersonalSimplification(fromUserId))
-                .thenReturn(personalSimplification(personalSuggestion(fromUserId, toUserId, "150.00")));
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-150.00")));
         when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
                 any(), any(), any(), any()
         )).thenReturn(Optional.empty());
@@ -264,6 +298,143 @@ class SettlementServiceTest {
     }
 
     @Test
+    @DisplayName("Record personal settlement: payer directly owes ₹333.33 and exact payment of ₹333.33 succeeds")
+    void testRecordPersonalSettlement_Owes333_ExactPayment_Success() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("333.33"));
+        req.setNotes("Settling exact debt");
+
+        Settlement saved = new Settlement(null, fromUserId, toUserId, new BigDecimal("333.33"), SettlementStatus.COMPLETED);
+        saved.setId(UUID.randomUUID());
+        saved.setNotes("Settling exact debt");
+        saved.setCreatedAt(Instant.now());
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-333.33")));
+        when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenReturn(saved);
+
+        SettlementHistoryResponse resp = settlementService.recordPersonalSettlement(fromUserId, req);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getAmount()).isEqualByComparingTo("333.33");
+        assertThat(resp.getStatus()).isEqualTo(SettlementStatus.COMPLETED);
+        verify(settlementRepository).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: payer directly owes ₹333.33 and partial payment of ₹100.00 succeeds")
+    void testRecordPersonalSettlement_Owes333_PartialPayment_Success() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("100.00"));
+        req.setNotes("Partial payment");
+
+        Settlement saved = new Settlement(null, fromUserId, toUserId, new BigDecimal("100.00"), SettlementStatus.COMPLETED);
+        saved.setId(UUID.randomUUID());
+        saved.setCreatedAt(Instant.now());
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-333.33")));
+        when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenReturn(saved);
+
+        SettlementHistoryResponse resp = settlementService.recordPersonalSettlement(fromUserId, req);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getAmount()).isEqualByComparingTo("100.00");
+        verify(settlementRepository).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: payer owes friend even though global debt simplification does not suggest paying this friend")
+    void testRecordPersonalSettlement_PayerOwesFriendEvenThoughGlobalSimplificationDoesNotSuggest() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("333.33"));
+
+        Settlement saved = new Settlement(null, fromUserId, toUserId, new BigDecimal("333.33"), SettlementStatus.COMPLETED);
+        saved.setId(UUID.randomUUID());
+        saved.setCreatedAt(Instant.now());
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        // Direct friend balance shows debt of 333.33 to toUserId
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-333.33")));
+        when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenReturn(saved);
+
+        SettlementHistoryResponse resp = settlementService.recordPersonalSettlement(fromUserId, req);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getAmount()).isEqualByComparingTo("333.33");
+        // Global simplification is never consulted for pairwise friend settlement
+        verify(balanceCalculationService, never()).simplifyPersonalBalances(any());
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: overpayment exceeding debt of ₹333.33 is rejected")
+    void testRecordPersonalSettlement_Overpayment_Rejected() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("333.34"));
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-333.33")));
+
+        assertThatThrownBy(() -> settlementService.recordPersonalSettlement(fromUserId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("exceeds payer's outstanding personal debt of 333.33");
+
+        verify(settlementRepository, never()).save(any(Settlement.class));
+        verify(notificationServiceClient, never()).createNotification(any());
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: payer and recipient cannot be the same user (ID manipulation)")
+    void testRecordPersonalSettlement_PayerEqualsRecipient_Rejected() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(fromUserId); // manipulating toUserId to be self
+        req.setAmount(new BigDecimal("100.00"));
+
+        assertThatThrownBy(() -> settlementService.recordPersonalSettlement(fromUserId, req))
+                .isInstanceOf(InvalidRecipientException.class)
+                .hasMessageContaining("Payer and recipient cannot be the same user");
+
+        verify(settlementRepository, never()).save(any(Settlement.class));
+        verify(balanceCalculationService, never()).calculateFriendBalance(any(), any());
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: payer is creditor (friend owes payer) -> rejected")
+    void testRecordPersonalSettlement_PayerIsCreditor_Rejected() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("50.00"));
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        // Positive net balance means toUserId owes fromUserId, fromUserId owes nothing
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("100.00")));
+
+        assertThatThrownBy(() -> settlementService.recordPersonalSettlement(fromUserId, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Payer has no outstanding personal debt to this recipient");
+
+        verify(settlementRepository, never()).save(any(Settlement.class));
+    }
+
+    @Test
     @DisplayName("Record personal settlement: amount exceeding recipient-specific debt rejected")
     void recordPersonalSettlement_exceedsRecipientSpecificDebt_rejected() {
         RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
@@ -271,8 +442,8 @@ class SettlementServiceTest {
         req.setAmount(new BigDecimal("200.00"));
 
         doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
-        when(balanceServiceClient.getPersonalSimplification(fromUserId))
-                .thenReturn(personalSimplification(personalSuggestion(fromUserId, toUserId, "150.00")));
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-150.00")));
 
         assertThatThrownBy(() -> settlementService.recordPersonalSettlement(fromUserId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -283,16 +454,15 @@ class SettlementServiceTest {
     }
 
     @Test
-    @DisplayName("Record personal settlement: wrong recipient rejected even when payer owes someone else")
+    @DisplayName("Record personal settlement: wrong recipient rejected when payer has no debt with that recipient")
     void recordPersonalSettlement_wrongRecipient_rejected() {
-        UUID otherRecipient = UUID.randomUUID();
         RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
         req.setToUserId(toUserId);
         req.setAmount(new BigDecimal("100.00"));
 
         doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
-        when(balanceServiceClient.getPersonalSimplification(fromUserId))
-                .thenReturn(personalSimplification(personalSuggestion(fromUserId, otherRecipient, "100.00")));
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, BigDecimal.ZERO));
 
         assertThatThrownBy(() -> settlementService.recordPersonalSettlement(fromUserId, req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -309,8 +479,8 @@ class SettlementServiceTest {
         req.setAmount(new BigDecimal("50.00"));
 
         doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
-        when(balanceServiceClient.getPersonalSimplification(fromUserId))
-                .thenReturn(personalSimplification(personalSuggestion(fromUserId, toUserId, "100.00")));
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-100.00")));
         when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
                 any(), any(), any(), any()
         )).thenReturn(Optional.of(new Settlement(null, fromUserId, toUserId, new BigDecimal("50.00"), SettlementStatus.COMPLETED)));
@@ -320,6 +490,71 @@ class SettlementServiceTest {
                 .hasMessageContaining("same details was just recorded");
 
         verify(settlementRepository, never()).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("Record settlement: notification failure does not break primary settlement operation")
+    void testRecordSettlement_NotificationFailure_SettlementSucceeds() {
+        RecordSettlementRequest req = new RecordSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("100.00"));
+
+        Settlement saved = new Settlement(groupId, fromUserId, toUserId, new BigDecimal("100.00"), SettlementStatus.COMPLETED);
+        saved.setId(UUID.randomUUID());
+        saved.setCreatedAt(Instant.now());
+
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
+
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
+                createBalance(fromUserId, new BigDecimal("-150.00")),
+                createBalance(toUserId, new BigDecimal("150.00"))
+        ));
+        when(settlementRepository.findTopByGroupIdAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenReturn(saved);
+
+        doThrow(new RuntimeException("Notification service unreachable"))
+                .when(notificationServiceClient).createNotification(any());
+
+        SettlementHistoryResponse resp = settlementService.recordSettlement(groupId, fromUserId, req);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getId()).isEqualTo(saved.getId());
+        assertThat(resp.getAmount()).isEqualByComparingTo("100.00");
+        verify(settlementRepository).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: notification failure does not break primary settlement operation")
+    void testRecordPersonalSettlement_NotificationFailure_SettlementSucceeds() {
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("50.00"));
+
+        Settlement saved = new Settlement(null, fromUserId, toUserId, new BigDecimal("50.00"), SettlementStatus.COMPLETED);
+        saved.setId(UUID.randomUUID());
+        saved.setCreatedAt(Instant.now());
+
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-100.00")));
+        when(settlementRepository.findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenReturn(saved);
+
+        doThrow(new RuntimeException("Notification service network failure"))
+                .when(notificationServiceClient).createNotification(any());
+
+        SettlementHistoryResponse resp = settlementService.recordPersonalSettlement(fromUserId, req);
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getId()).isEqualTo(saved.getId());
+        assertThat(resp.getAmount()).isEqualByComparingTo("50.00");
+        verify(settlementRepository).save(any(Settlement.class));
     }
 
 }

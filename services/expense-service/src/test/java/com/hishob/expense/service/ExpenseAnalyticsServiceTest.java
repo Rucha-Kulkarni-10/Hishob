@@ -1,6 +1,6 @@
 package com.hishob.expense.service;
 
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.client.SettlementServiceClient.CompletedSettlementData;
 import com.hishob.expense.dto.CategorySpendingSummary;
@@ -43,7 +43,7 @@ class ExpenseAnalyticsServiceTest {
     private ExpenseRepository expenseRepository;
 
     @Mock
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @Mock
     private SettlementServiceClient settlementServiceClient;
@@ -58,7 +58,7 @@ class ExpenseAnalyticsServiceTest {
     void setUp() {
         analyticsService = new ExpenseAnalyticsService(
                 expenseRepository,
-                groupServiceClient,
+                groupService,
                 settlementServiceClient
         );
 
@@ -94,9 +94,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("1. Analytics for valid group member succeeds")
     void testAnalyticsForValidGroupMember() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
@@ -104,15 +104,15 @@ class ExpenseAnalyticsServiceTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getGroupId()).isEqualTo(groupId);
-        verify(groupServiceClient).validateMember(groupId, user1, "Current user");
+        verify(groupService).validateMember(groupId, user1, "Current user");
     }
 
     @Test
     @DisplayName("2. Non-member receives 403 (PermissionDeniedException)")
     void testNonMemberReceivesPermissionDenied() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupService).validateGroupExists(groupId);
         doThrow(new PermissionDeniedException("Current user is not a member of this group"))
-                .when(groupServiceClient).validateMember(groupId, user1, "Current user");
+                .when(groupService).validateMember(groupId, user1, "Current user");
 
         assertThatThrownBy(() -> analyticsService.getGroupAnalytics(groupId, user1, null, null))
                 .isInstanceOf(PermissionDeniedException.class)
@@ -122,9 +122,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("3, 4, 5. Total spending, expense count, and average calculation")
     void testSpendingCountAndAverageCalculation() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
@@ -149,9 +149,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("6 & 7. Member totalPaid, totalShare, and netPosition calculation")
     void testMemberSpendingBreakdown() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
@@ -182,9 +182,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("8. Monthly aggregation uses createdAt only")
     void testMonthlyAggregationUsesCreatedAt() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant sepDate = Instant.parse("2026-09-15T10:00:00Z");
@@ -214,9 +214,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("9. Date filtering routes to repository between query")
     void testDateFiltering() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         when(expenseRepository.findByGroupIdAndCreatedAtBetweenOrderByCreatedAtDesc(eq(groupId), any(), any()))
@@ -230,9 +230,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("10. Empty group / no expenses returns valid zero values")
     void testEmptyGroupReturnsZeroValues() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
@@ -250,8 +250,8 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("11. CSV response generates formatted content with quotes escaping")
     void testCsvExport() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
         Expense e = createTestExpense(UUID.randomUUID(), groupId, "Dinner with \"special\" guest",
@@ -275,8 +275,8 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("12. Settlement service communication failure propagates ServiceUnavailableException")
     void testSettlementServiceFailureHandling() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
         when(settlementServiceClient.getCompletedSettlements(groupId))
@@ -290,9 +290,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("13. Total settled volume sums completed settlements")
     void testTotalSettledVolumeCalculation() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of(
@@ -308,9 +308,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("14. Group analytics returns category breakdown with correct amounts and percentages")
     void testCategorySpendingBreakdown() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Expense e1 = createTestExpense(UUID.randomUUID(), groupId, "Lunch", new BigDecimal("300.00"), user1, Instant.now(), List.of(

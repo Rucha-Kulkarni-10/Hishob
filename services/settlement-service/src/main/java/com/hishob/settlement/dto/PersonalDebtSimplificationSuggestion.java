@@ -9,6 +9,15 @@ public class PersonalDebtSimplificationSuggestion {
     private UUID toUserId;
     private BigDecimal amount;
 
+    public PersonalDebtSimplificationSuggestion() {
+    }
+
+    public PersonalDebtSimplificationSuggestion(UUID fromUserId, UUID toUserId, BigDecimal amount) {
+        this.fromUserId = fromUserId;
+        this.toUserId = toUserId;
+        this.amount = amount;
+    }
+
     public UUID getFromUserId() {
         return fromUserId;
     }

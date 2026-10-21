@@ -1,6 +1,6 @@
 package com.hishob.expense.controller;
 
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.client.SettlementServiceClient.CompletedSettlementData;
 import com.hishob.expense.entity.Expense;
@@ -54,7 +54,7 @@ class ExpenseAnalyticsControllerIntegrationTest {
     private JwtService jwtService;
 
     @MockitoBean
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @MockitoBean
     private SettlementServiceClient settlementServiceClient;
@@ -99,9 +99,9 @@ class ExpenseAnalyticsControllerIntegrationTest {
     @Test
     @DisplayName("GET /api/groups/{groupId}/expenses/analytics - 200 OK for valid member")
     void getAnalyticsSuccess() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, userId, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(userId));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, userId, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(userId));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of(
                 new CompletedSettlementData(UUID.randomUUID(), userId, new BigDecimal("50.00"))
         ));
@@ -124,9 +124,9 @@ class ExpenseAnalyticsControllerIntegrationTest {
     @Test
     @DisplayName("GET /api/groups/{groupId}/expenses/analytics - 403 Forbidden for non-member")
     void getAnalyticsForbidden() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupService).validateGroupExists(groupId);
         doThrow(new PermissionDeniedException("Current user is not a member of this group"))
-                .when(groupServiceClient).validateMember(groupId, userId, "Current user");
+                .when(groupService).validateMember(groupId, userId, "Current user");
 
         mockMvc.perform(get("/api/groups/{groupId}/expenses/analytics", groupId)
                         .header("Authorization", "Bearer " + jwtToken)
@@ -145,8 +145,8 @@ class ExpenseAnalyticsControllerIntegrationTest {
     @Test
     @DisplayName("GET /api/groups/{groupId}/expenses/export/csv - 200 OK with CSV headers")
     void exportCsvSuccess() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, userId, "Current user");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, userId, "Current user");
 
         Expense exp = new Expense(groupId, "Supplies", new BigDecimal("75.00"), userId, userId, SplitType.EQUAL);
         exp.addSplit(new ExpenseSplit(userId, new BigDecimal("75.00"), SplitType.EQUAL, null));

@@ -84,7 +84,7 @@ spring:
               uri: http://localhost:9999
               predicates:
                 - Path=/api/notifications/**
-            - id: group-service
+            - id: expense-service-groups
               uri: http://localhost:9999
               predicates:
                 - Path=/api/groups/**

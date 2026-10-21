@@ -19,6 +19,13 @@ public class InternalAuthFilter extends OncePerRequestFilter {
 
     public static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
 
+    /**
+     * The one service-to-service path under /api that may be authenticated by the internal token
+     * instead of a user JWT. It is not restricted to a hard 401 because Expense Service also
+     * calls it with only a forwarded user Authorization header.
+     */
+    public static final String SERVICE_API_PATH = "/api/auth/users/batch";
+
     private final String expectedToken;
 
     public InternalAuthFilter(
@@ -32,14 +39,26 @@ public class InternalAuthFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
-        String token = request.getHeader(INTERNAL_TOKEN_HEADER);
-        if (token != null && !token.isBlank() && token.equals(expectedToken)) {
-            if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                        "internal-service", null, Collections.emptyList());
-                SecurityContextHolder.getContext().setAuthentication(auth);
-            }
+        String path = request.getRequestURI();
+        boolean strictInternal = path.startsWith("/internal/");
+        if (!strictInternal && !path.equals(SERVICE_API_PATH)) {
+            filterChain.doFilter(request, response);
+            return;
         }
+
+        String token = request.getHeader(INTERNAL_TOKEN_HEADER);
+        if (token == null || token.isBlank() || !token.equals(expectedToken)) {
+            if (strictInternal) {
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                "internal-service", null, Collections.emptyList());
+        SecurityContextHolder.getContext().setAuthentication(auth);
 
         filterChain.doFilter(request, response);
     }

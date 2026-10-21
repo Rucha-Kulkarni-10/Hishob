@@ -2,11 +2,14 @@ package com.hishob.settlement.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hishob.settlement.client.AuthServiceClient;
-import com.hishob.settlement.client.BalanceServiceClient;
 import com.hishob.settlement.client.GroupServiceClient;
+import com.hishob.settlement.dto.FriendBalanceResponse;
+import com.hishob.settlement.dto.GroupBalanceResponse;
 import com.hishob.settlement.dto.InternalBalanceData;
 import com.hishob.settlement.dto.PersonalDebtSimplificationResponse;
 import com.hishob.settlement.dto.PersonalDebtSimplificationSuggestion;
+import com.hishob.settlement.dto.UserBalanceResponse;
+import com.hishob.settlement.service.BalanceCalculationService;
 import com.hishob.settlement.exception.GroupNotFoundException;
 import com.hishob.settlement.exception.InvalidRecipientException;
 import com.hishob.settlement.exception.PermissionDeniedException;
@@ -57,7 +60,7 @@ class SettlementControllerIntegrationTest {
     private GroupServiceClient groupServiceClient;
 
     @MockitoBean
-    private BalanceServiceClient balanceServiceClient;
+    private BalanceCalculationService balanceCalculationService;
 
     @MockitoBean
     private AuthServiceClient authServiceClient;
@@ -114,13 +117,34 @@ class SettlementControllerIntegrationTest {
         return response;
     }
 
+    private FriendBalanceResponse friendBalance(UUID currentUserId, UUID friendUserId, String currentNet, String friendNet) {
+        BigDecimal curNet = new BigDecimal(currentNet);
+        BigDecimal frNet = new BigDecimal(friendNet);
+        UUID from = null;
+        UUID to = null;
+        BigDecimal amt = curNet.abs();
+        if (curNet.compareTo(BigDecimal.ZERO) < 0) {
+            from = currentUserId;
+            to = friendUserId;
+        } else if (curNet.compareTo(BigDecimal.ZERO) > 0) {
+            from = friendUserId;
+            to = currentUserId;
+        }
+        return new FriendBalanceResponse(
+                currentUserId, friendUserId, curNet, frNet,
+                curNet.compareTo(BigDecimal.ZERO) < 0 ? "OWES" : "GETS",
+                frNet.compareTo(BigDecimal.ZERO) < 0 ? "OWES" : "GETS",
+                from, to, amt
+        );
+    }
+
     private void stubHappyPath(UUID caller) {
         doNothing().when(groupServiceClient).validateGroupExists(groupId);
         doNothing().when(groupServiceClient).validateMember(groupId, caller);
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
-                balance(userA, "-500.00"),
-                balance(userB, "500.00")
-        ));
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(new GroupBalanceResponse(groupId, List.of(
+                new UserBalanceResponse(userA, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-500.00"), null),
+                new UserBalanceResponse(userB, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("500.00"), null)
+        )));
     }
 
     // ── 14. Invalid JWT ───────────────────────────────────────────────────────
@@ -217,7 +241,7 @@ class SettlementControllerIntegrationTest {
     void balanceServiceUnavailable_503() throws Exception {
         stubHappyPath(userA);
         doThrow(new ServiceUnavailableException("Balance Service unavailable"))
-                .when(balanceServiceClient).getGroupBalances(groupId);
+                .when(balanceCalculationService).calculateGroupBalancesInternal(groupId);
 
         mockMvc.perform(get("/api/groups/" + groupId + "/settlements")
                         .header("Authorization", "Bearer " + jwt(userA)))
@@ -316,10 +340,10 @@ class SettlementControllerIntegrationTest {
     @DisplayName("Suggestions: valid member with balances → 200 with suggestions")
     void getSuggestions_ok() throws Exception {
         stubHappyPath(userA);
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
-                balance(userA, "300.00"),
-                balance(userB, "-300.00")
-        ));
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(new GroupBalanceResponse(groupId, List.of(
+                new UserBalanceResponse(userA, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("300.00"), null),
+                new UserBalanceResponse(userB, BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("-300.00"), null)
+        )));
 
         mockMvc.perform(get("/api/groups/" + groupId + "/settlements")
                         .header("Authorization", "Bearer " + jwt(userA)))
@@ -334,10 +358,10 @@ class SettlementControllerIntegrationTest {
     @DisplayName("Suggestions: all settled → 200 with empty list")
     void getSuggestions_allSettled() throws Exception {
         stubHappyPath(userA);
-        when(balanceServiceClient.getGroupBalances(groupId)).thenReturn(List.of(
-                balance(userA, "0.00"),
-                balance(userB, "0.00")
-        ));
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(new GroupBalanceResponse(groupId, List.of(
+                new UserBalanceResponse(userA, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null),
+                new UserBalanceResponse(userB, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, null)
+        )));
 
         mockMvc.perform(get("/api/groups/" + groupId + "/settlements")
                         .header("Authorization", "Bearer " + jwt(userA)))
@@ -350,8 +374,8 @@ class SettlementControllerIntegrationTest {
     @DisplayName("Personal settlement: valid JWT records completed personal payment")
     void personalSettlement_ok() throws Exception {
         doNothing().when(authServiceClient).validateAcceptedFriendship(userA, userB);
-        when(balanceServiceClient.getPersonalSimplification(userA))
-                .thenReturn(personalSimplification(userA, userB, "500.00"));
+        when(balanceCalculationService.calculateFriendBalance(userA, userB))
+                .thenReturn(friendBalance(userA, userB, "-500.00", "500.00"));
 
         String body = objectMapper.writeValueAsString(Map.of(
                 "toUserId", userB,
@@ -374,10 +398,9 @@ class SettlementControllerIntegrationTest {
     @Test
     @DisplayName("Personal settlement: wrong recipient rejected")
     void personalSettlement_wrongRecipient_badRequest() throws Exception {
-        UUID userC = UUID.randomUUID();
         doNothing().when(authServiceClient).validateAcceptedFriendship(userA, userB);
-        when(balanceServiceClient.getPersonalSimplification(userA))
-                .thenReturn(personalSimplification(userA, userC, "500.00"));
+        when(balanceCalculationService.calculateFriendBalance(userA, userB))
+                .thenReturn(friendBalance(userA, userB, "0.00", "0.00"));
 
         String body = objectMapper.writeValueAsString(Map.of("toUserId", userB, "amount", "200.00"));
 
@@ -392,8 +415,8 @@ class SettlementControllerIntegrationTest {
     @DisplayName("Personal settlement history: returns only personal settlements involving current user")
     void personalSettlementHistory_ok() throws Exception {
         doNothing().when(authServiceClient).validateAcceptedFriendship(userA, userB);
-        when(balanceServiceClient.getPersonalSimplification(userA))
-                .thenReturn(personalSimplification(userA, userB, "500.00"));
+        when(balanceCalculationService.calculateFriendBalance(userA, userB))
+                .thenReturn(friendBalance(userA, userB, "-500.00", "500.00"));
 
         String body = objectMapper.writeValueAsString(Map.of("toUserId", userB, "amount", "200.00"));
         mockMvc.perform(post("/api/personal-settlements")
@@ -414,8 +437,8 @@ class SettlementControllerIntegrationTest {
     @DisplayName("Friend settlement history: accepted friend sees pairwise personal history")
     void friendSettlementHistory_ok() throws Exception {
         doNothing().when(authServiceClient).validateAcceptedFriendship(userA, userB);
-        when(balanceServiceClient.getPersonalSimplification(userA))
-                .thenReturn(personalSimplification(userA, userB, "500.00"));
+        when(balanceCalculationService.calculateFriendBalance(userA, userB))
+                .thenReturn(friendBalance(userA, userB, "-500.00", "500.00"));
 
         String body = objectMapper.writeValueAsString(Map.of("toUserId", userB, "amount", "200.00"));
         mockMvc.perform(post("/api/personal-settlements")

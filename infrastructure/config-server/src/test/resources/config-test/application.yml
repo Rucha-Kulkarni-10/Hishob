@@ -1,0 +1,3 @@
+hishob:
+  environment: test
+  welcome: shared defaults from the isolated test repository

@@ -7,7 +7,7 @@
  */
 
 import { createContext } from 'react';
-import type { LoginRequest, RegisterRequest, User } from '@/types/auth';
+import type { AuthResponse, LoginRequest, RegisterRequest, User } from '@/types/auth';
 
 export interface AuthContextValue {
   /** The currently authenticated user, or null if unauthenticated. */
@@ -18,8 +18,8 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   /** Log in with email and password. Stores the JWT and updates context. */
   login: (data: LoginRequest) => Promise<void>;
-  /** Register a new account. Stores the JWT and updates context on success. */
-  register: (data: RegisterRequest) => Promise<void>;
+  /** Register a new account. Stores the JWT if verified, returns AuthResponse. */
+  register: (data: RegisterRequest) => Promise<AuthResponse>;
   /** Clear stored token and reset user state. */
   logout: () => void;
 }

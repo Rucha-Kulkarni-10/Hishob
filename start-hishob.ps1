@@ -1,12 +1,12 @@
 # ============================================================
 #  start-hishob.ps1  –  HISHOB Backend Startup
-#  Project root: D:\Projects\My projects\Hishob
-#  Run from: anywhere (uses absolute paths)
+#  Project root: derived from $PSScriptRoot
+#  Run from: anywhere (resolves repository root automatically)
 # ============================================================
 
 $ErrorActionPreference = "Stop"
 
-$ROOT = "D:\Projects\My projects\Hishob"
+$ROOT = $PSScriptRoot
 
 # ── Helpers ──────────────────────────────────────────────────
 function Write-Step([string]$msg) {
@@ -71,14 +71,28 @@ function Wait-Http {
 function Start-HishobService {
     param(
         [string]$Label,
-        [string]$JarPath
+        [string]$JarPath,
+        [string]$ServiceName  # e.g., "auth-service", "expense-service"
     )
     $tmpScript = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
     $content = @"
-`$env:DB_PASSWORD = 'Abc@1234'
-`$env:DB_USERNAME = 'postgres'
-`$env:DB_HOST     = 'localhost'
-`$env:DB_PORT     = '5432'
+# Load .env file for this service if it exists
+`$envFile = '$ROOT\services\$ServiceName\.env'
+if (Test-Path `$envFile) {
+    Write-Host "Loading environment from `$envFile" -ForegroundColor DarkGray
+    Get-Content `$envFile | ForEach-Object {
+        if (`$_ -match '^\s*([^#][^=]+)\s*=\s*(.*)$') {
+            `$name = `$matches[1].Trim()
+            `$value = `$matches[2].Trim()
+            [Environment]::SetEnvironmentVariable(`$name, `$value, 'Process')
+        }
+    }
+} else {
+    Write-Host "[FAIL] Missing environment file: `$envFile" -ForegroundColor Red
+    Write-Host "       This service requires a .env with DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD (and DB_SCHEMA where the service yml uses it)." -ForegroundColor Red
+    Write-Host "       Startup aborted - no default credentials are used." -ForegroundColor Red
+    exit 1
+}
 Set-Location '$ROOT'
 Write-Host "Starting: $Label" -ForegroundColor Cyan
 java -jar "$JarPath"
@@ -96,18 +110,14 @@ $jarGroup           = "$ROOT\services\group-service\target\group-service-0.0.1-S
 $jarExpense         = "$ROOT\services\expense-service\target\expense-service-0.0.1-SNAPSHOT.jar"
 $jarBalance         = "$ROOT\services\balance-service\target\balance-service-0.0.1-SNAPSHOT.jar"
 $jarSettlement      = "$ROOT\services\settlement-service\target\settlement-service-0.0.1-SNAPSHOT.jar"
-$jarNotification    = "$ROOT\services\notification-service\target\notification-service-0.0.1-SNAPSHOT.jar"
 $jarGateway         = "$ROOT\gateway\api-gateway\target\api-gateway-0.0.1-SNAPSHOT.jar"
 
 $allJars = @{
     "Config Server"        = $jarConfigServer
     "Discovery Server"     = $jarDiscovery
     "Auth Service"         = $jarAuth
-    "Group Service"        = $jarGroup
     "Expense Service"      = $jarExpense
-    "Balance Service"      = $jarBalance
     "Settlement Service"   = $jarSettlement
-    "Notification Service" = $jarNotification
     "API Gateway"          = $jarGateway
 }
 
@@ -138,11 +148,11 @@ Write-Host "  ======================" -ForegroundColor Magenta
 Write-Host ""
 
 # ════════════════════════════════════════════════════════════
-# [1/9] Config Server — MUST run from $ROOT so the native
+# [1/6] Config Server — MUST run from $ROOT so the native
 #       file: search-location (./infrastructure/config-server/config/)
 #       resolves correctly.
 # ════════════════════════════════════════════════════════════
-Write-Step "[1/9] Starting Config Server :8888"
+Write-Step "[1/6] Starting Config Server :8888"
 $tmp1 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
 Set-Content -Path $tmp1 -Value @"
 Set-Location '$ROOT'
@@ -152,8 +162,8 @@ java -jar '$jarConfigServer'
 Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp1
 Wait-Port -Name "Config Server" -Port 8888 -TimeoutSec 120
 
-# ── [2/9] Discovery Server (Eureka) ─────────────────────────
-Write-Step "[2/9] Starting Discovery Server (Eureka) :8761"
+# ── [2/6] Discovery Server (Eureka) ─────────────────────────
+Write-Step "[2/6] Starting Discovery Server (Eureka) :8761"
 $tmp2 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
 Set-Content -Path $tmp2 -Value @"
 Set-Location '$ROOT'
@@ -163,46 +173,32 @@ java -jar '$jarDiscovery'
 Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp2
 Wait-Http -Name "Eureka" -Url "http://localhost:8761/" -TimeoutSec 120
 
-# ── [3/9] Auth Service ───────────────────────────────────────
-Write-Step "[3/9] Starting Auth Service :8081"
-Start-HishobService -Label "Auth Service" -JarPath $jarAuth
+# ── [3/6] Auth Service ───────────────────────────────────────
+Write-Step "[3/6] Starting Auth Service :8081"
+Start-HishobService -Label "Auth Service" -JarPath $jarAuth -ServiceName "auth-service"
 Wait-Port -Name "Auth Service" -Port 8081 -TimeoutSec 120
 
-# ── [4/9] Group Service ──────────────────────────────────────
-Write-Step "[4/9] Starting Group Service :8082"
-Start-HishobService -Label "Group Service" -JarPath $jarGroup
-Wait-Port -Name "Group Service" -Port 8082 -TimeoutSec 120
-
-# ── [5/9] Expense Service ────────────────────────────────────
-Write-Step "[5/9] Starting Expense Service :8083"
-Start-HishobService -Label "Expense Service" -JarPath $jarExpense
+# ── [4/6] Expense Service (includes Groups) ──────────────────
+Write-Step "[4/6] Starting Expense Service :8083"
+Start-HishobService -Label "Expense Service" -JarPath $jarExpense -ServiceName "expense-service"
 Wait-Port -Name "Expense Service" -Port 8083 -TimeoutSec 120
 
-# ── [6/9] Balance Service ────────────────────────────────────
-Write-Step "[6/9] Starting Balance Service :8084"
-Start-HishobService -Label "Balance Service" -JarPath $jarBalance
-Wait-Port -Name "Balance Service" -Port 8084 -TimeoutSec 120
-
-# ── [7/9] Settlement Service ─────────────────────────────────
-Write-Step "[7/9] Starting Settlement Service :8085"
-Start-HishobService -Label "Settlement Service" -JarPath $jarSettlement
+# ── [5/6] Settlement Service (includes Balances) ─────────────
+Write-Step "[5/6] Starting Settlement Service :8085"
+Start-HishobService -Label "Settlement Service" -JarPath $jarSettlement -ServiceName "settlement-service"
 Wait-Port -Name "Settlement Service" -Port 8085 -TimeoutSec 120
 
-# ── [8/9] Notification Service ───────────────────────────────
-Write-Step "[8/9] Starting Notification Service :8086"
-Start-HishobService -Label "Notification Service" -JarPath $jarNotification
-Wait-Port -Name "Notification Service" -Port 8086 -TimeoutSec 120
-
-# ── [9/9] API Gateway ────────────────────────────────────────
-Write-Step "[9/9] Starting API Gateway :8080"
+# ── [6/6] API Gateway ────────────────────────────────────────
+Write-Step "[6/6] Starting API Gateway :8087"
 $tmp9 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
 Set-Content -Path $tmp9 -Value @"
+`$env:PORT = '8087'
 Set-Location '$ROOT'
 Write-Host 'Starting API Gateway...' -ForegroundColor Cyan
 java -jar '$jarGateway'
 "@ -Encoding UTF8
 Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp9
-Wait-Port -Name "API Gateway" -Port 8080 -TimeoutSec 120
+Wait-Port -Name "API Gateway" -Port 8087 -TimeoutSec 120
 
 # ── Summary ──────────────────────────────────────────────────
 Write-Host ""
@@ -210,15 +206,18 @@ Write-Host "  ============================================" -ForegroundColor Gre
 Write-Host "       HISHOB BACKEND IS FULLY RUNNING        " -ForegroundColor Green
 Write-Host "  ============================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "  Consolidated 3-domain architecture:" -ForegroundColor Cyan
+Write-Host "    • Auth Service (authentication, users, friendships)" -ForegroundColor DarkGray
+Write-Host "    • Expense Service (groups, expenses, analytics)" -ForegroundColor DarkGray
+Write-Host "    • Settlement Service (balances, settlements)" -ForegroundColor DarkGray
+Write-Host ""
 Write-Host "  Config Server    : http://localhost:8888" -ForegroundColor White
 Write-Host "  Eureka           : http://localhost:8761" -ForegroundColor White
-Write-Host "  API Gateway      : http://localhost:8080" -ForegroundColor White
+Write-Host "  API Gateway      : http://localhost:8087" -ForegroundColor White
 Write-Host "  Auth Service     : http://localhost:8081" -ForegroundColor White
-Write-Host "  Group Service    : http://localhost:8082" -ForegroundColor White
-Write-Host "  Expense Service  : http://localhost:8083" -ForegroundColor White
-Write-Host "  Balance Service  : http://localhost:8084" -ForegroundColor White
-Write-Host "  Settlement Svc   : http://localhost:8085" -ForegroundColor White
-Write-Host "  Notification Svc : http://localhost:8086" -ForegroundColor White
+Write-Host "  Expense Service  : http://localhost:8083  (includes Groups)" -ForegroundColor White
+Write-Host "  Settlement Svc   : http://localhost:8085  (includes Balances)" -ForegroundColor White
+Write-Host "  Notifications    : served by Auth Service :8081" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Stop all services: .\stop-hishob.ps1" -ForegroundColor DarkGray
 Write-Host ""

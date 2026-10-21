@@ -1,6 +1,5 @@
 package com.hishob.expense.service;
 
-import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.dto.CategorySpendingSummary;
 import com.hishob.expense.dto.FriendSpendingSummary;
@@ -39,15 +38,15 @@ import java.util.stream.Collectors;
 public class ExpenseAnalyticsService {
 
     private final ExpenseRepository expenseRepository;
-    private final GroupServiceClient groupServiceClient;
+    private final GroupService groupService;
     private final SettlementServiceClient settlementServiceClient;
 
     public ExpenseAnalyticsService(
             ExpenseRepository expenseRepository,
-            GroupServiceClient groupServiceClient,
+            GroupService groupService,
             SettlementServiceClient settlementServiceClient) {
         this.expenseRepository = expenseRepository;
-        this.groupServiceClient = groupServiceClient;
+        this.groupService = groupService;
         this.settlementServiceClient = settlementServiceClient;
     }
 
@@ -58,8 +57,8 @@ public class ExpenseAnalyticsService {
             String endDateStr) {
 
         // 1. Authorization: check group existence and membership
-        groupServiceClient.validateGroupExists(groupId);
-        groupServiceClient.validateMember(groupId, currentUserId, "Current user");
+        groupService.validateGroupExists(groupId);
+        groupService.validateMember(groupId, currentUserId, "Current user");
 
         // 2. Parse dates if provided
         Instant startInstant = parseDateBoundary(startDateStr, false);
@@ -86,7 +85,7 @@ public class ExpenseAnalyticsService {
                 .setScale(2, RoundingMode.HALF_UP);
 
         // 6. Member Spending breakdown
-        List<UUID> memberIds = groupServiceClient.getGroupMemberIds(groupId);
+        List<UUID> memberIds = groupService.getGroupMemberIds(groupId);
         Set<UUID> allMemberIds = new LinkedHashSet<>(memberIds);
         for (Expense e : expenses) {
             allMemberIds.add(e.getPaidBy());
@@ -199,8 +198,8 @@ public class ExpenseAnalyticsService {
             String startDateStr,
             String endDateStr) {
 
-        groupServiceClient.validateGroupExists(groupId);
-        groupServiceClient.validateMember(groupId, currentUserId, "Current user");
+        groupService.validateGroupExists(groupId);
+        groupService.validateMember(groupId, currentUserId, "Current user");
 
         Instant startInstant = parseDateBoundary(startDateStr, false);
         Instant endInstant = parseDateBoundary(endDateStr, true);

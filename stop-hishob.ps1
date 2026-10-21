@@ -1,10 +1,15 @@
 # ============================================================
 #  stop-hishob.ps1
 #  Stops all HISHOB backend Java processes.
-#  Project root: D:\Projects\My projects\Hishob
+#  Project: HISHOB
 # ============================================================
 
-$hishobPorts = @(8888, 8761, 8081, 8082, 8083, 8084, 8085, 8086, 8080)
+# Ports of the services launched by start-hishob.ps1 (config, eureka, auth,
+# expense, settlement, gateway). group-service (:8082), balance-service (:8084)
+# and the legacy notification-service (:8086, now served by Auth) are not
+# launched by default; the port list and JAR-name sweep below still catch them
+# if started manually for rollback/reference.
+$hishobPorts = @(8888, 8761, 8081, 8083, 8085, 8086, 8087)
 
 Write-Host ""
 Write-Host "Stopping HISHOB backend services..." -ForegroundColor Cyan

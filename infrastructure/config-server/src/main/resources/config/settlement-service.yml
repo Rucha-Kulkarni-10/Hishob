@@ -1,0 +1,4 @@
+# Externalized Configuration for HISHOB Settlement Service
+hishob:
+  settlement-service:
+    placeholder: true

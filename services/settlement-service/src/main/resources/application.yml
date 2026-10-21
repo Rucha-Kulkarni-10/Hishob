@@ -1,13 +1,13 @@
 server:
-  port: 8085
+  port: ${PORT:8085}
 
 spring:
   application:
     name: settlement-service
   config:
-    import: "optional:configserver:http://localhost:8888"
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hishob_settlement}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hishob_settlement}?currentSchema=${DB_SCHEMA:hishob_settlement}&sslmode=${DB_SSLMODE:prefer}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -23,26 +23,21 @@ spring:
 
 eureka:
   client:
-    register-with-eureka: true
-    fetch-registry: true
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
 
 jwt:
   secret: ${JWT_SECRET:d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026}
 
 hishob:
-  group-service:
-    base-url: ${GROUP_SERVICE_URL:http://localhost:8082}
-    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
-  balance-service:
-    base-url: ${BALANCE_SERVICE_URL:http://localhost:8084}
+  expense-service:
+    base-url: ${EXPENSE_SERVICE_URL:http://localhost:8083}
     internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
   auth-service:
     base-url: ${AUTH_SERVICE_URL:http://localhost:8081}
-    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
-  notification-service:
-    base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8086}
     internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
   internal:
     token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}

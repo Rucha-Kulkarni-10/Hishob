@@ -10,9 +10,12 @@
  * The main content area renders the active child route via <Outlet />.
  */
 
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Suspense } from 'react';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import NotificationBell from '@/components/notifications/NotificationBell';
+import LoadingState from '@/components/common/LoadingState';
+import BrandLogo from '@/components/common/BrandLogo';
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -26,10 +29,9 @@ export default function AppLayout() {
   return (
     <div className="app-layout">
       <header className="app-header">
-        <div className="app-header__brand">
-          <span className="app-header__logo">₹</span>
-          <span className="app-header__name">HISHOB</span>
-        </div>
+        <Link to="/dashboard" className="app-header__brand" aria-label="HISHOB Dashboard">
+          <BrandLogo variant="responsive" size="md" priority />
+        </Link>
 
         <nav className="app-header__nav" aria-label="Primary">
           <NavLink
@@ -111,8 +113,17 @@ export default function AppLayout() {
       </header>
 
       <main className="app-main">
-        <Outlet />
+        <Suspense fallback={<LoadingState height="lg" label="Loading page…" />}>
+          <Outlet />
+        </Suspense>
       </main>
+
+      <footer className="app-footer">
+        <div className="app-footer__content">
+          <BrandLogo variant="icon" size="xs" alt="HISHOB" />
+          <span>HISHOB — Split, Track, Settle Together</span>
+        </div>
+      </footer>
     </div>
   );
 }

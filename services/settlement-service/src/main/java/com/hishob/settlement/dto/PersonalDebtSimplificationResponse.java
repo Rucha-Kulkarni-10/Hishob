@@ -8,6 +8,14 @@ public class PersonalDebtSimplificationResponse {
     private UUID userId;
     private List<PersonalDebtSimplificationSuggestion> suggestions;
 
+    public PersonalDebtSimplificationResponse() {
+    }
+
+    public PersonalDebtSimplificationResponse(UUID userId, List<PersonalDebtSimplificationSuggestion> suggestions) {
+        this.userId = userId;
+        this.suggestions = suggestions;
+    }
+
     public UUID getUserId() {
         return userId;
     }

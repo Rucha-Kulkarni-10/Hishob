@@ -1,13 +1,13 @@
 server:
-  port: 8081
+  port: ${PORT:8081}
 
 spring:
   application:
     name: auth-service
   config:
-    import: "optional:configserver:http://localhost:8888"
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hishob_auth}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hishob_auth}?currentSchema=${DB_SCHEMA:hishob_auth}&sslmode=${DB_SSLMODE:prefer}}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
@@ -23,11 +23,36 @@ spring:
 
 eureka:
   client:
-    register-with-eureka: true
-    fetch-registry: true
+    enabled: ${EUREKA_CLIENT_ENABLED:true}
+    register-with-eureka: ${EUREKA_REGISTER_WITH_EUREKA:true}
+    fetch-registry: ${EUREKA_FETCH_REGISTRY:true}
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
 
 jwt:
   secret: ${JWT_SECRET:d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026}
   expiration: ${JWT_EXPIRATION:86400000}
+
+mailgun:
+  enabled: ${MAILGUN_ENABLED:false}
+  api-key: ${MAILGUN_API_KEY:}
+  domain: ${MAILGUN_DOMAIN:}
+  base-url: ${MAILGUN_BASE_URL:https://api.mailgun.net}
+  from-name: ${MAILGUN_FROM_NAME:HISHOB}
+  from-email: ${MAILGUN_FROM_EMAIL:noreply@hishob.com}
+  connect-timeout-ms: ${MAILGUN_CONNECT_TIMEOUT_MS:5000}
+  read-timeout-ms: ${MAILGUN_READ_TIMEOUT_MS:10000}
+
+auth:
+  email-verification:
+    required: ${EMAIL_VERIFICATION_REQUIRED:false}
+    token-validity-seconds: ${EMAIL_VERIFICATION_TOKEN_VALIDITY_SECONDS:86400}
+    resend-cooldown-seconds: ${EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS:60}
+    frontend-url: ${FRONTEND_URL:http://localhost:3000}
+    verification-path: ${EMAIL_VERIFICATION_PATH:/verify-email}
+
+hishob:
+  internal:
+    token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+
+

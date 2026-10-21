@@ -51,6 +51,12 @@ build/
 logs/
 *.log
 
+# ---------- Database Backups ----------
+# pg_dump custom-format archives contain real user data — never commit
+backups/
+backups-*/
+*.backup
+
 # ---------- OS ----------
 .DS_Store
 Thumbs.db

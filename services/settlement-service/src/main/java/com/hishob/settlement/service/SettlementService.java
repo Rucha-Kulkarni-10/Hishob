@@ -2,7 +2,6 @@ package com.hishob.settlement.service;
 
 import com.hishob.settlement.algorithm.DebtSimplificationAlgorithm;
 import com.hishob.settlement.client.AuthServiceClient;
-import com.hishob.settlement.client.BalanceServiceClient;
 import com.hishob.settlement.client.GroupServiceClient;
 import com.hishob.settlement.client.NotificationServiceClient;
 import com.hishob.settlement.dto.*;
@@ -10,6 +9,8 @@ import com.hishob.settlement.entity.Settlement;
 import com.hishob.settlement.entity.SettlementStatus;
 import com.hishob.settlement.exception.InvalidRecipientException;
 import com.hishob.settlement.repository.SettlementRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,21 +25,23 @@ import java.util.stream.Collectors;
 @Service
 public class SettlementService {
 
+    private static final Logger log = LoggerFactory.getLogger(SettlementService.class);
+
     private final GroupServiceClient groupServiceClient;
-    private final BalanceServiceClient balanceServiceClient;
+    private final BalanceCalculationService balanceCalculationService;
     private final AuthServiceClient authServiceClient;
     private final DebtSimplificationAlgorithm algorithm;
     private final SettlementRepository settlementRepository;
     private final NotificationServiceClient notificationServiceClient;
 
     public SettlementService(GroupServiceClient groupServiceClient,
-                             BalanceServiceClient balanceServiceClient,
+                             BalanceCalculationService balanceCalculationService,
                              AuthServiceClient authServiceClient,
                              DebtSimplificationAlgorithm algorithm,
                              SettlementRepository settlementRepository,
                              NotificationServiceClient notificationServiceClient) {
         this.groupServiceClient = groupServiceClient;
-        this.balanceServiceClient = balanceServiceClient;
+        this.balanceCalculationService = balanceCalculationService;
         this.authServiceClient = authServiceClient;
         this.algorithm = algorithm;
         this.settlementRepository = settlementRepository;
@@ -48,7 +51,10 @@ public class SettlementService {
     public List<SettlementSuggestion> getSuggestions(UUID groupId, UUID currentUserId) {
         groupServiceClient.validateGroupExists(groupId);
         groupServiceClient.validateMember(groupId, currentUserId);
-        List<InternalBalanceData> balances = balanceServiceClient.getGroupBalances(groupId);
+        GroupBalanceResponse groupBalances = balanceCalculationService.calculateGroupBalancesInternal(groupId);
+        List<InternalBalanceData> balances = groupBalances.getBalances().stream()
+                .map(b -> new InternalBalanceData(b.getUserId(), b.getNetBalance()))
+                .toList();
         return algorithm.simplify(balances);
     }
 
@@ -67,9 +73,9 @@ public class SettlementService {
 
         BigDecimal amount = money(request.getAmount());
 
-        // Pre-settlement validation: check payer's outstanding debt via Balance Service
-        List<InternalBalanceData> balances = balanceServiceClient.getGroupBalances(groupId);
-        InternalBalanceData payerBalance = balances.stream()
+        // Pre-settlement validation: check payer's outstanding debt via local BalanceCalculationService
+        GroupBalanceResponse groupBalances = balanceCalculationService.calculateGroupBalancesInternal(groupId);
+        UserBalanceResponse payerBalance = groupBalances.getBalances().stream()
                 .filter(b -> b.getUserId().equals(fromUserId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Payer is not part of group balances"));
@@ -195,49 +201,55 @@ public class SettlementService {
     }
 
     private BigDecimal findOutstandingPersonalDebt(UUID fromUserId, UUID toUserId) {
-        PersonalDebtSimplificationResponse response = balanceServiceClient.getPersonalSimplification(fromUserId);
-        if (response.getSuggestions() == null) {
+        FriendBalanceResponse response = balanceCalculationService.calculateFriendBalance(fromUserId, toUserId);
+        if (response == null || response.getCurrentUserNetBalance() == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
-        return response.getSuggestions().stream()
-                .filter(s -> fromUserId.equals(s.getFromUserId()) && toUserId.equals(s.getToUserId()))
-                .map(PersonalDebtSimplificationSuggestion::getAmount)
-                .filter(a -> a != null)
-                .map(this::money)
-                .reduce(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP), BigDecimal::add);
+        // If payer (fromUserId) has a negative net balance with recipient (toUserId), payer owes that debt
+        if (response.getCurrentUserNetBalance().compareTo(BigDecimal.ZERO) < 0) {
+            if (response.getAmount() != null) {
+                return money(response.getAmount());
+            }
+            return money(response.getCurrentUserNetBalance().abs());
+        }
+        return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
     }
 
     private void sendSettlementNotifications(Settlement settlement) {
-        boolean personal = settlement.getGroupId() == null;
-        Map<String, Object> metadata = Map.of(
-                "settlementId", settlement.getId().toString(),
-                "amount", settlement.getAmount().toString(),
-                "fromUserId", settlement.getFromUserId().toString(),
-                "toUserId", settlement.getToUserId().toString(),
-                "personal", personal
-        );
-        
-        // Only send notifications if fromUserId and toUserId are different
-        if (!settlement.getFromUserId().equals(settlement.getToUserId())) {
-            // Notify the payer (fromUserId)
-            CreateNotificationRequest fromNotification = new CreateNotificationRequest(
-                    settlement.getFromUserId(),
-                    settlement.getGroupId(),
-                    personal ? "PERSONAL_SETTLEMENT_RECORDED" : "SETTLEMENT_RECORDED",
-                    personal ? "A personal settlement was recorded." : "A settlement was recorded.",
-                    metadata
+        try {
+            boolean personal = settlement.getGroupId() == null;
+            Map<String, Object> metadata = Map.of(
+                    "settlementId", settlement.getId().toString(),
+                    "amount", settlement.getAmount().toString(),
+                    "fromUserId", settlement.getFromUserId().toString(),
+                    "toUserId", settlement.getToUserId().toString(),
+                    "personal", personal
             );
-            notificationServiceClient.createNotification(fromNotification);
             
-            // Notify the recipient (toUserId)
-            CreateNotificationRequest toNotification = new CreateNotificationRequest(
-                    settlement.getToUserId(),
-                    settlement.getGroupId(),
-                    personal ? "PERSONAL_SETTLEMENT_RECORDED" : "SETTLEMENT_RECORDED",
-                    personal ? "A personal settlement was recorded." : "A settlement was recorded.",
-                    metadata
-            );
-            notificationServiceClient.createNotification(toNotification);
+            // Only send notifications if fromUserId and toUserId are different
+            if (!settlement.getFromUserId().equals(settlement.getToUserId())) {
+                // Notify the payer (fromUserId)
+                CreateNotificationRequest fromNotification = new CreateNotificationRequest(
+                        settlement.getFromUserId(),
+                        settlement.getGroupId(),
+                        personal ? "PERSONAL_SETTLEMENT_RECORDED" : "SETTLEMENT_RECORDED",
+                        personal ? "A personal settlement was recorded." : "A settlement was recorded.",
+                        metadata
+                );
+                notificationServiceClient.createNotification(fromNotification);
+                
+                // Notify the recipient (toUserId)
+                CreateNotificationRequest toNotification = new CreateNotificationRequest(
+                        settlement.getToUserId(),
+                        settlement.getGroupId(),
+                        personal ? "PERSONAL_SETTLEMENT_RECORDED" : "SETTLEMENT_RECORDED",
+                        personal ? "A personal settlement was recorded." : "A settlement was recorded.",
+                        metadata
+                );
+                notificationServiceClient.createNotification(toNotification);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to dispatch settlement notification for settlement {}: {}", settlement.getId(), e.getMessage());
         }
     }
 

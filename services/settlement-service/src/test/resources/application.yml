@@ -28,17 +28,11 @@ jwt:
   secret: d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026
 
 hishob:
-  group-service:
-    base-url: http://localhost:9998
-    internal-token: test-internal-token
-  balance-service:
-    base-url: http://localhost:9999
+  expense-service:
+    base-url: http://localhost:9995
     internal-token: test-internal-token
   auth-service:
     base-url: http://localhost:9996
-    internal-token: test-internal-token
-  notification-service:
-    base-url: http://localhost:9997
     internal-token: test-internal-token
   internal:
     token: test-internal-token

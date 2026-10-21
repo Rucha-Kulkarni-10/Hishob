@@ -1,7 +1,6 @@
 package com.hishob.expense.service;
 
 import com.hishob.expense.client.AuthServiceClient;
-import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.NotificationServiceClient;
 import com.hishob.expense.dto.CreateExpenseRequest;
 import com.hishob.expense.dto.CreateNotificationRequest;
@@ -19,10 +18,13 @@ import com.hishob.expense.exception.InvalidSplitException;
 import com.hishob.expense.exception.PermissionDeniedException;
 import com.hishob.expense.repository.ExpenseRepository;
 import com.hishob.expense.repository.ExpenseSplitRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +36,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class ExpenseService {
 
+    private static final Logger log = LoggerFactory.getLogger(ExpenseService.class);
+
     private static final String TYPE_GROUP_ADDED = "EXPENSE_ADDED";
     private static final String TYPE_GROUP_UPDATED = "EXPENSE_UPDATED";
     private static final String TYPE_GROUP_DELETED = "EXPENSE_DELETED";
@@ -44,7 +48,7 @@ public class ExpenseService {
     private final ExpenseRepository expenseRepository;
     @SuppressWarnings("unused")
     private final ExpenseSplitRepository expenseSplitRepository;
-    private final GroupServiceClient groupServiceClient;
+    private final GroupService groupService;
     private final AuthServiceClient authServiceClient;
     private final SplitCalculationService splitCalculationService;
     private final NotificationServiceClient notificationServiceClient;
@@ -52,13 +56,13 @@ public class ExpenseService {
     public ExpenseService(
             ExpenseRepository expenseRepository,
             ExpenseSplitRepository expenseSplitRepository,
-            GroupServiceClient groupServiceClient,
+            GroupService groupService,
             AuthServiceClient authServiceClient,
             SplitCalculationService splitCalculationService,
             NotificationServiceClient notificationServiceClient) {
         this.expenseRepository = expenseRepository;
         this.expenseSplitRepository = expenseSplitRepository;
-        this.groupServiceClient = groupServiceClient;
+        this.groupService = groupService;
         this.authServiceClient = authServiceClient;
         this.splitCalculationService = splitCalculationService;
         this.notificationServiceClient = notificationServiceClient;
@@ -120,8 +124,8 @@ public class ExpenseService {
 
     @Transactional(readOnly = true)
     public List<ExpenseResponse> listGroupExpenses(UUID groupId, UUID currentUserId) {
-        groupServiceClient.validateGroupExists(groupId);
-        groupServiceClient.validateMember(groupId, currentUserId, "Caller");
+        groupService.validateGroupExists(groupId);
+        groupService.validateMember(groupId, currentUserId, "Caller");
         List<Expense> list = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
         return list.stream().map(ExpenseResponse::fromEntity).collect(Collectors.toList());
     }
@@ -148,7 +152,7 @@ public class ExpenseService {
         if (expense.getGroupId() == null) {
             throw new ExpenseNotFoundException("Expense not found: " + expenseId);
         }
-        groupServiceClient.validateMember(expense.getGroupId(), currentUserId, "Caller");
+        groupService.validateMember(expense.getGroupId(), currentUserId, "Caller");
         return ExpenseResponse.fromEntity(expense);
     }
 
@@ -247,9 +251,9 @@ public class ExpenseService {
             UUID paidBy,
             List<ExpenseSplitRequest> splitRequests,
             UUID currentUserId) {
-        groupServiceClient.validateGroupExists(groupId);
-        groupServiceClient.validateMember(groupId, currentUserId, "Creator");
-        groupServiceClient.validateMember(groupId, paidBy, "Payer");
+        groupService.validateGroupExists(groupId);
+        groupService.validateMember(groupId, currentUserId, "Creator");
+        groupService.validateMember(groupId, paidBy, "Payer");
 
         List<UUID> userIds = splitRequests.stream()
                 .map(ExpenseSplitRequest::getUserId)
@@ -257,7 +261,7 @@ public class ExpenseService {
         splitCalculationService.validateNoDuplicateUsers(userIds);
 
         for (UUID userId : userIds) {
-            groupServiceClient.validateMember(groupId, userId, "Participant");
+            groupService.validateMember(groupId, userId, "Participant");
         }
     }
 
@@ -316,31 +320,72 @@ public class ExpenseService {
     }
 
     private void sendExpenseNotifications(Expense expense, String notificationType, String message, UUID actorUserId) {
-        Set<UUID> recipientIds = expense.getSplits().stream()
-                .map(ExpenseSplit::getUserId)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        recipientIds.add(expense.getPaidBy());
+        Set<UUID> recipientIds = new LinkedHashSet<>();
+        try {
+            recipientIds = resolveNotificationRecipients(expense, actorUserId);
 
-        Map<String, Object> metadata = Map.of(
-                "expenseId", expense.getId().toString(),
-                "amount", expense.getTotalAmount().toString(),
-                "description", expense.getDescription(),
-                "category", expense.getCategory() != null ? expense.getCategory().name() : "OTHER",
-                "personal", expense.getGroupId() == null,
-                "actorUserId", actorUserId.toString()
-        );
+            if (recipientIds.isEmpty()) {
+                log.debug("No eligible recipient for {} on expense {} (group {}); dispatch skipped",
+                        notificationType, expense.getId(), expense.getGroupId());
+                return;
+            }
 
-        for (UUID recipientId : recipientIds) {
-            CreateNotificationRequest notificationRequest = new CreateNotificationRequest(
-                    recipientId,
-                    expense.getGroupId(),
-                    notificationType,
-                    message,
-                    metadata
-            );
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put("expenseId", expense.getId().toString());
+            metadata.put("amount", expense.getTotalAmount() != null ? expense.getTotalAmount().toString() : "0.00");
+            metadata.put("description", expense.getDescription() != null ? expense.getDescription() : "");
+            metadata.put("category", expense.getCategory() != null ? expense.getCategory().name() : "OTHER");
+            metadata.put("personal", expense.getGroupId() == null);
+            if (actorUserId != null) {
+                metadata.put("actorUserId", actorUserId.toString());
+            }
 
-            notificationServiceClient.createNotification(notificationRequest);
+            for (UUID recipientId : recipientIds) {
+                CreateNotificationRequest notificationRequest = new CreateNotificationRequest(
+                        recipientId,
+                        expense.getGroupId(),
+                        notificationType,
+                        message,
+                        metadata
+                );
+
+                notificationServiceClient.createNotification(notificationRequest);
+            }
+        } catch (Exception e) {
+            // Isolation: notification dispatch failure must never roll back expense operations
+            log.warn("Failed to dispatch {} notification for expense {} in group {} to {} recipient(s): {}",
+                    notificationType, expense.getId(), expense.getGroupId(), recipientIds.size(), e.toString());
         }
+    }
+
+    /**
+     * Group activity reaches every active member because all members can see group expenses;
+     * personal activity reaches only the people involved in it. Split participation is deliberately
+     * not used for group recipients, so a member who owes nothing still learns about the expense.
+     */
+    private Set<UUID> resolveNotificationRecipients(Expense expense, UUID actorUserId) {
+        Set<UUID> recipientIds = new LinkedHashSet<>();
+
+        if (expense.getGroupId() != null) {
+            // listMemberIds stays silent for an unknown group, unlike getGroupMemberIds which throws.
+            recipientIds.addAll(groupService.listMemberIds(expense.getGroupId()));
+        } else {
+            for (ExpenseSplit split : expense.getSplits()) {
+                if (split.getUserId() != null) {
+                    recipientIds.add(split.getUserId());
+                }
+            }
+            if (expense.getPaidBy() != null) {
+                recipientIds.add(expense.getPaidBy());
+            }
+        }
+
+        // Exclude the acting user from receiving notifications about their own action
+        if (actorUserId != null) {
+            recipientIds.remove(actorUserId);
+        }
+
+        return recipientIds;
     }
 }
 

@@ -11,15 +11,21 @@ public class UserResponse {
     private String name;
     private String email;
     private Instant createdAt;
+    private boolean emailVerified;
 
     public UserResponse() {
     }
 
     public UserResponse(UUID id, String name, String email, Instant createdAt) {
+        this(id, name, email, createdAt, false);
+    }
+
+    public UserResponse(UUID id, String name, String email, Instant createdAt, boolean emailVerified) {
         this.id = id;
         this.name = name;
         this.email = email;
         this.createdAt = createdAt;
+        this.emailVerified = emailVerified;
     }
 
     public static UserResponse fromEntity(User user) {
@@ -27,7 +33,8 @@ public class UserResponse {
                 user.getId(),
                 user.getName(),
                 user.getEmail(),
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.isEmailVerified()
         );
     }
 
@@ -61,6 +68,14 @@ public class UserResponse {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 
 }

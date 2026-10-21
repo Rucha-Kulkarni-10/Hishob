@@ -5,6 +5,20 @@ spring:
   application:
     name: discovery-server
 
+# Eureka server pulls Actuator in transitively. Pin the anonymous surface to a status-only
+# health check so a dependency or profile change cannot re-open env/beans/mappings inventory.
+management:
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+  endpoints:
+    web:
+      discovery:
+        enabled: false
+      exposure:
+        include: health
+
 eureka:
   client:
     register-with-eureka: false

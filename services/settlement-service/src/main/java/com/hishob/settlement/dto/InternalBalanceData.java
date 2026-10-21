@@ -11,6 +11,11 @@ public class InternalBalanceData {
     public InternalBalanceData() {
     }
 
+    public InternalBalanceData(UUID userId, BigDecimal netBalance) {
+        this.userId = userId;
+        this.netBalance = netBalance;
+    }
+
     public UUID getUserId() { return userId; }
     public void setUserId(UUID userId) { this.userId = userId; }
 

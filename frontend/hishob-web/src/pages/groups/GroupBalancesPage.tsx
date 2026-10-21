@@ -28,7 +28,7 @@ import type { GroupResponse, MemberResponse } from '@/types/groups';
 import type { MemberBalance, SettlementSuggestion } from '@/types/balances';
 import type { SettlementHistoryItem } from '@/types/settlements';
 import { useAuth } from '@/hooks/useAuth';
-import { getErrorMessage } from '@/utils/errorUtils';
+import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
 import LoadingState from '@/components/common/LoadingState';
 import EmptyState from '@/components/common/EmptyState';
 import BalanceSummary from '@/components/balances/BalanceSummary';
@@ -133,8 +133,7 @@ export default function GroupBalancesPage() {
       setGroup(g);
       setMembers(ms);
     } catch (err: unknown) {
-      const { default: axios } = await import('axios');
-      if (axios.isAxiosError(err)) {
+      if (isAxiosError(err)) {
         const status = err.response?.status;
         if (status === 404) { setIs404(true); return; }
         if (status === 403) { setIs403(true); return; }

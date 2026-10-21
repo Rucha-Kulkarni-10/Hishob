@@ -1,0 +1,4 @@
+# Externalized Configuration for HISHOB Balance Service
+hishob:
+  balance-service:
+    placeholder: true
