@@ -22,10 +22,10 @@ spring:
 # Test configuration
 hishob:
   internal:
-    token: test-internal-token
+    token: hishob-test-internal-token-for-automated-tests-only
 
 jwt:
-  secret: d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026
+  secret: hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef
 
 logging:
   level:

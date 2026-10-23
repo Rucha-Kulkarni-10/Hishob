@@ -28,7 +28,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class NotificationServiceClientTargetTest {
 
     private static final String BASE_URL = "http://auth-service.test:8081";
-    private static final String TOKEN = "test-internal-token";
+    private static final String TOKEN = "hishob-test-internal-token-for-automated-tests-only";
 
     private RestClient.Builder builder;
     private MockRestServiceServer mockServer;

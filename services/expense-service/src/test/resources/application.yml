@@ -25,11 +25,11 @@ eureka:
     fetch-registry: false
 
 jwt:
-  secret: d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026
+  secret: hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef
 
 hishob:
   auth-service:
     base-url: http://localhost:9999
-    internal-token: test-internal-token
+    internal-token: hishob-test-internal-token-for-automated-tests-only
   internal:
-    token: test-internal-token
+    token: hishob-test-internal-token-for-automated-tests-only

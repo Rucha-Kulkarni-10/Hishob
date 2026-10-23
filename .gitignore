@@ -40,6 +40,12 @@ out/
 .env.*
 !.env.example
 
+# ---------- Local operator scratch (holds real machine credentials) ----------
+/.agents/
+/EXECUTION-CHECKLIST.md
+/phase1-initial-status.txt
+/create-service-env-files.ps1
+
 # ---------- Node.js / Frontend ----------
 node_modules/
 dist/

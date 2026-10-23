@@ -51,7 +51,7 @@ class NotificationInternalControllerTest {
 
     private MockMvc mockMvc;
 
-    private static final String INTERNAL_TOKEN = "test-internal-token";
+    private static final String INTERNAL_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
     private static final String WRONG_TOKEN = "definitely-wrong-token";
 
     @BeforeEach

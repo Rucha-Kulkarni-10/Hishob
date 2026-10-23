@@ -304,7 +304,7 @@ class FriendshipControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("User search works")
+    @DisplayName("User search returns no contact details for unrelated users")
     void testUserSearchWorks() throws Exception {
         AuthResponse searcher = registerUser("Searcher Person", "searcher@example.com", "password123");
         registerUser("Sarah Example", "sarah@example.com", "password123");
@@ -315,8 +315,8 @@ class FriendshipControllerIntegrationTest {
                         .param("q", "sarah"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].name").value("Sarah Example"))
-                .andExpect(jsonPath("$[0].email").value("sarah@example.com"))
                 .andExpect(jsonPath("$[0].userId").isNotEmpty())
+                .andExpect(jsonPath("$[0].email").doesNotExist())
                 .andExpect(jsonPath("$[0].password").doesNotExist());
     }
 
@@ -332,7 +332,7 @@ class FriendshipControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(1)))
                 .andExpect(jsonPath("$[0].name").value("Other Search"))
-                .andExpect(jsonPath("$[0].email").value("other.search@example.com"));
+                .andExpect(jsonPath("$[0].email").doesNotExist());
     }
 
     @Test

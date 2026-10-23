@@ -44,7 +44,7 @@ class BalanceInternalControllerSecurityTest {
 
     private MockMvc mockMvc;
 
-    private static final String VALID_TOKEN = "test-internal-token";
+    private static final String VALID_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
     private static final String WRONG_TOKEN = "wrong-token";
 
     private UUID groupId;

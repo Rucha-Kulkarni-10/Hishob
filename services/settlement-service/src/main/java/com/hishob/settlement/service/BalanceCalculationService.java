@@ -63,60 +63,54 @@ public class BalanceCalculationService {
         return calculateBalancesForGroup(groupId);
     }
 
+    /**
+     * Rows for {@code GET /api/personal-balances}.
+     *
+     * <p>The current user's row is their graph-global position (everything they paid minus
+     * everything they owe across all personal expenses) because the summary cards need the
+     * "You owe" / "You are owed" totals. Every other row is the pairwise standing between the
+     * current user and that person — only money that moves directly between the two of them.
+     * A friend's debts to third parties are not the current user's to settle and must not inflate
+     * the amount on their card.
+     *
+     * <p>Pairwise is the one definition of "amount payable to a particular friend": it also backs
+     * {@code GET /api/friends/{id}/balance} and the cap enforced when a personal settlement is
+     * recorded, so an amount the UI offers to settle is always an amount the backend accepts.
+     */
     public PersonalBalanceSummaryResponse calculatePersonalBalances(UUID currentUserId) {
-        List<InternalExpenseData> expenses = expenseServiceClient.getPersonalExpensesForUser(currentUserId);
-        List<Settlement> settlementEntities = settlementRepository.findPersonalByUserIdAndStatus(currentUserId, SettlementStatus.COMPLETED);
-        List<CompletedSettlementData> settlements = settlementEntities == null ? List.of() :
-                settlementEntities.stream()
-                        .map(s -> new CompletedSettlementData(s.getFromUserId(), s.getToUserId(), s.getAmount()))
-                        .toList();
-        List<PersonalBalanceResponse> balances = calculatePersonalBalancesFromExpenses(expenses, settlements);
+        PersonalLedger ledger = loadPersonalLedger(currentUserId);
+
+        List<PersonalBalanceResponse> balances = new ArrayList<>();
+        for (UUID userId : ledger.participants) {
+            if (userId.equals(currentUserId)) {
+                BigDecimal net = money(ledger.currentUserPaid
+                        .subtract(ledger.currentUserShare)
+                        .add(ledger.currentUserSettled));
+                balances.add(new PersonalBalanceResponse(userId,
+                        money(ledger.currentUserPaid), money(ledger.currentUserShare), net, resolveStatus(net)));
+                continue;
+            }
+            PairwisePosition counterparty = ledger.pairwise.get(userId);
+            BigDecimal net = counterparty == null ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                    : counterparty.netForCounterparty();
+            BigDecimal paid = counterparty == null ? BigDecimal.ZERO : counterparty.credit;
+            BigDecimal share = counterparty == null ? BigDecimal.ZERO : counterparty.debt;
+            balances.add(new PersonalBalanceResponse(userId, money(paid), money(share), net, resolveStatus(net)));
+        }
+
+        verifyPersonalConservation(balances);
         return new PersonalBalanceSummaryResponse(currentUserId, balances);
     }
 
     public FriendBalanceResponse calculateFriendBalance(UUID currentUserId, UUID friendUserId) {
         authServiceClient.validateAcceptedFriendship(currentUserId, friendUserId);
-        List<InternalExpenseData> expenses = expenseServiceClient.getPersonalExpensesForUser(currentUserId);
+        PersonalLedger ledger = loadPersonalLedger(currentUserId);
 
-        BigDecimal currentNet = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
-        for (InternalExpenseData expense : expenses) {
-            UUID payer = expense.getPaidBy();
-            if (payer == null || expense.getSplits() == null) {
-                continue;
-            }
-            for (InternalSplitData split : expense.getSplits()) {
-                if (split.getUserId() == null || split.getAmount() == null || split.getUserId().equals(payer)) {
-                    continue;
-                }
-                BigDecimal amount = money(split.getAmount());
-                if (payer.equals(currentUserId) && split.getUserId().equals(friendUserId)) {
-                    currentNet = currentNet.add(amount);
-                } else if (payer.equals(friendUserId) && split.getUserId().equals(currentUserId)) {
-                    currentNet = currentNet.subtract(amount);
-                }
-            }
-        }
+        PairwisePosition counterparty = ledger.pairwise.get(friendUserId);
+        BigDecimal currentNet = counterparty == null
+                ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP)
+                : counterparty.netForCurrentUser();
 
-        List<Settlement> settlementEntities = settlementRepository.findPersonalByUserIdAndStatus(currentUserId, SettlementStatus.COMPLETED);
-        List<CompletedSettlementData> settlements = settlementEntities == null ? List.of() :
-                settlementEntities.stream()
-                        .map(s -> new CompletedSettlementData(s.getFromUserId(), s.getToUserId(), s.getAmount()))
-                        .toList();
-        for (CompletedSettlementData settlement : settlements) {
-            UUID fromUserId = settlement.getFromUserId();
-            UUID toUserId = settlement.getToUserId();
-            BigDecimal amount = money(settlement.getAmount());
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new BalanceCalculationException("Completed personal settlement has invalid amount");
-            }
-            if (fromUserId.equals(currentUserId) && toUserId.equals(friendUserId)) {
-                currentNet = currentNet.add(amount);
-            } else if (fromUserId.equals(friendUserId) && toUserId.equals(currentUserId)) {
-                currentNet = currentNet.subtract(amount);
-            }
-        }
-
-        currentNet = money(currentNet);
         BigDecimal friendNet = currentNet.negate().setScale(2, RoundingMode.HALF_UP);
         UUID fromUserId = null;
         UUID toUserId = null;
@@ -245,57 +239,117 @@ public class BalanceCalculationService {
         return new GroupBalanceResponse(groupId, balances);
     }
 
-    private List<PersonalBalanceResponse> calculatePersonalBalancesFromExpenses(
-            List<InternalExpenseData> expenses,
-            List<CompletedSettlementData> settlements) {
-        Map<UUID, BigDecimal> totalPaid = new HashMap<>();
-        Map<UUID, BigDecimal> totalShare = new HashMap<>();
-        Set<UUID> users = new TreeSet<>(Comparator.comparing(UUID::toString));
+    /**
+     * Single pass behind every personal surface: who appears in the current user's graph, the
+     * current user's graph-global totals, and the pairwise standing with each counterparty.
+     */
+    private PersonalLedger loadPersonalLedger(UUID currentUserId) {
+        List<InternalExpenseData> expenses = expenseServiceClient.getPersonalExpensesForUser(currentUserId);
+        PersonalLedger ledger = new PersonalLedger();
 
-        for (InternalExpenseData expense : expenses) {
+        for (InternalExpenseData expense : expenses == null ? List.<InternalExpenseData>of() : expenses) {
             if (expense.getGroupId() != null) {
                 continue;
             }
             UUID payer = expense.getPaidBy();
             if (payer != null) {
-                users.add(payer);
-                totalPaid.merge(payer, money(expense.getTotalAmount()), BigDecimal::add);
+                ledger.participants.add(payer);
+                if (payer.equals(currentUserId)) {
+                    ledger.currentUserPaid = ledger.currentUserPaid.add(money(expense.getTotalAmount()));
+                }
             }
-            if (expense.getSplits() != null) {
-                for (InternalSplitData split : expense.getSplits()) {
-                    if (split.getUserId() == null) {
-                        continue;
-                    }
-                    users.add(split.getUserId());
-                    totalShare.merge(split.getUserId(), money(split.getAmount()), BigDecimal::add);
+            if (payer == null || expense.getSplits() == null) {
+                continue;
+            }
+            for (InternalSplitData split : expense.getSplits()) {
+                UUID splitter = split.getUserId();
+                if (splitter == null || split.getAmount() == null) {
+                    continue;
+                }
+                ledger.participants.add(splitter);
+                BigDecimal amount = money(split.getAmount());
+                if (splitter.equals(currentUserId)) {
+                    ledger.currentUserShare = ledger.currentUserShare.add(amount);
+                }
+                if (splitter.equals(payer)) {
+                    continue;
+                }
+                if (splitter.equals(currentUserId)) {
+                    ledger.position(payer).addCredit(amount);
+                } else if (payer.equals(currentUserId)) {
+                    ledger.position(splitter).addDebt(amount);
                 }
             }
         }
 
-        Map<UUID, BigDecimal> settlementAdjustments = new HashMap<>();
-        for (CompletedSettlementData settlement : settlements) {
+        for (CompletedSettlementData settlement : completedPersonalSettlements(currentUserId)) {
             UUID fromUserId = settlement.getFromUserId();
             UUID toUserId = settlement.getToUserId();
             BigDecimal amount = money(settlement.getAmount());
             if (fromUserId == null || toUserId == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new BalanceCalculationException("Completed personal settlement has invalid data");
             }
-            users.add(fromUserId);
-            users.add(toUserId);
-            settlementAdjustments.merge(fromUserId, amount, BigDecimal::add);
-            settlementAdjustments.merge(toUserId, amount.negate(), BigDecimal::add);
+            if (fromUserId.equals(currentUserId)) {
+                ledger.currentUserSettled = ledger.currentUserSettled.add(amount);
+                if (!toUserId.equals(currentUserId)) {
+                    ledger.participants.add(toUserId);
+                    ledger.position(toUserId).addDebt(amount);
+                }
+            }
+            if (toUserId.equals(currentUserId)) {
+                ledger.currentUserSettled = ledger.currentUserSettled.subtract(amount);
+                if (!fromUserId.equals(currentUserId)) {
+                    ledger.participants.add(fromUserId);
+                    ledger.position(fromUserId).addCredit(amount);
+                }
+            }
+        }
+        return ledger;
+    }
+
+    private List<CompletedSettlementData> completedPersonalSettlements(UUID currentUserId) {
+        List<Settlement> entities = settlementRepository.findPersonalByUserIdAndStatus(currentUserId, SettlementStatus.COMPLETED);
+        return entities == null ? List.of() : entities.stream()
+                .map(s -> new CompletedSettlementData(s.getFromUserId(), s.getToUserId(), s.getAmount()))
+                .toList();
+    }
+
+    private static final class PersonalLedger {
+
+        private final Set<UUID> participants = new TreeSet<>(Comparator.comparing(UUID::toString));
+        private final Map<UUID, PairwisePosition> pairwise = new HashMap<>();
+        private BigDecimal currentUserPaid = BigDecimal.ZERO;
+        private BigDecimal currentUserShare = BigDecimal.ZERO;
+        private BigDecimal currentUserSettled = BigDecimal.ZERO;
+
+        private PairwisePosition position(UUID userId) {
+            return pairwise.computeIfAbsent(userId, ignored -> new PairwisePosition());
+        }
+    }
+
+    /** Money that moves directly between the current user and one counterparty. */
+    private static final class PairwisePosition {
+
+        private BigDecimal credit = BigDecimal.ZERO;
+        private BigDecimal debt = BigDecimal.ZERO;
+
+        private void addCredit(BigDecimal amount) {
+            credit = credit.add(amount);
         }
 
-        List<PersonalBalanceResponse> balances = new ArrayList<>();
-        for (UUID userId : users) {
-            BigDecimal paid = money(totalPaid.getOrDefault(userId, BigDecimal.ZERO));
-            BigDecimal share = money(totalShare.getOrDefault(userId, BigDecimal.ZERO));
-            BigDecimal net = money(paid.subtract(share).add(settlementAdjustments.getOrDefault(userId, BigDecimal.ZERO)));
-            balances.add(new PersonalBalanceResponse(userId, paid, share, net, resolveStatus(net)));
+        private void addDebt(BigDecimal amount) {
+            debt = debt.add(amount);
         }
 
-        verifyPersonalConservation(balances);
-        return balances;
+        /** Positive when the counterparty is owed by the current user. */
+        private BigDecimal netForCounterparty() {
+            return money(credit.subtract(debt));
+        }
+
+        /** The same figure read from the current user's side — the cap applied to settlements. */
+        private BigDecimal netForCurrentUser() {
+            return money(debt.subtract(credit));
+        }
     }
 
     private List<PersonalDebtSimplificationSuggestion> simplify(List<PersonalBalanceResponse> balances) {
@@ -363,7 +417,7 @@ public class BalanceCalculationService {
         }
     }
 
-    private BigDecimal money(BigDecimal value) {
+    private static BigDecimal money(BigDecimal value) {
         return (value != null ? value : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 

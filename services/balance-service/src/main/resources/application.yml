@@ -16,17 +16,17 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
 
 jwt:
-  secret: ${JWT_SECRET:d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026}
+  secret: ${JWT_SECRET}
 
 hishob:
   expense-service:
     base-url: ${EXPENSE_SERVICE_URL:http://localhost:8083}
-    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+    internal-token: ${INTERNAL_SERVICE_TOKEN}
   auth-service:
     base-url: ${AUTH_SERVICE_URL:http://localhost:8081}
-    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+    internal-token: ${INTERNAL_SERVICE_TOKEN}
   settlement-service:
     base-url: ${SETTLEMENT_SERVICE_URL:http://localhost:8085}
-    internal-token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+    internal-token: ${INTERNAL_SERVICE_TOKEN}
   internal:
-    token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+    token: ${INTERNAL_SERVICE_TOKEN}

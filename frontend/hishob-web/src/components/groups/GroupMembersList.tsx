@@ -63,9 +63,6 @@ export default function GroupMembersList({
                       </span>
                     )}
                   </div>
-                  {m.email && (
-                    <span className="members-table__email">{m.email}</span>
-                  )}
                 </td>
                 <td className="members-table__date">
                   {formatDate(m.joinedAt)}

@@ -2,19 +2,18 @@ package com.hishob.expense.dto;
 
 import java.util.UUID;
 
+/** Projection of Auth Service's UserSummaryResponse — display name only, never contact details. */
 public class UserSummaryData {
 
     private UUID id;
     private String name;
-    private String email;
 
     public UserSummaryData() {
     }
 
-    public UserSummaryData(UUID id, String name, String email) {
+    public UserSummaryData(UUID id, String name) {
         this.id = id;
         this.name = name;
-        this.email = email;
     }
 
     public UUID getId() {
@@ -31,14 +30,6 @@ public class UserSummaryData {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
     }
 
 }

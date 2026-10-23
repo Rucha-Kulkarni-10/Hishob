@@ -7,6 +7,7 @@ import ProtectedRoute from '@/routes/ProtectedRoute';
 import PublicRoute from '@/routes/PublicRoute';
 
 const DashboardPage = lazy(() => import('@/pages/dashboard/DashboardPage'));
+const ExpenseOverviewPage = lazy(() => import('@/pages/dashboard/ExpenseOverviewPage'));
 const GroupsPage = lazy(() => import('@/pages/groups/GroupsPage'));
 const GroupDetailsPage = lazy(() => import('@/pages/groups/GroupDetailsPage'));
 const GroupExpensesPage = lazy(() => import('@/pages/groups/GroupExpensesPage'));
@@ -40,6 +41,7 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/expense-overview" element={<ExpenseOverviewPage />} />
             <Route path="/groups" element={<GroupsPage />} />
             <Route path="/groups/:id" element={<GroupDetailsPage />} />
             <Route path="/groups/:id/expenses" element={<GroupExpensesPage />} />

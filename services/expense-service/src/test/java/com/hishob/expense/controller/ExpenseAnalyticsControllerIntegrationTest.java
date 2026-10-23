@@ -31,6 +31,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -68,7 +69,7 @@ class ExpenseAnalyticsControllerIntegrationTest {
     private UUID groupId;
     private String jwtToken;
 
-    private static final String TEST_SECRET = "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+    private static final String TEST_SECRET = "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
 
     @BeforeEach
     void setUp() {
@@ -159,5 +160,90 @@ class ExpenseAnalyticsControllerIntegrationTest {
                 .andExpect(header().string("Content-Disposition", "attachment; filename=\"expenses-" + groupId + ".csv\""))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"Supplies\",\"Other\",75.00")));
+    }
+
+    // ── #137 payer / split-type query parameters ─────────────────────────────
+
+    private void persistExpense(String description, String amount, UUID payer, SplitType splitType) {
+        Expense expense = new Expense(groupId, description, new BigDecimal(amount), payer, payer, splitType);
+        expense.addSplit(new ExpenseSplit(payer, new BigDecimal(amount), splitType, null));
+        expenseRepository.save(expense);
+    }
+
+    @Test
+    @DisplayName("Analytics applies payerId and splitType query params to the totals it returns")
+    void analyticsAppliesPayerAndSplitTypeParams() throws Exception {
+        UUID otherPayer = UUID.randomUUID();
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, userId, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(userId, otherPayer));
+        when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
+
+        persistExpense("Own lunch", "200.00", userId, SplitType.EQUAL);
+        persistExpense("Friend cab", "50.00", otherPayer, SplitType.EXACT);
+
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/analytics", groupId)
+                        .param("payerId", userId.toString())
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expenseCount", is(1)))
+                .andExpect(jsonPath("$.totalSpending", is(200.00)))
+                .andExpect(jsonPath("$.monthlyTrends", hasSize(1)))
+                .andExpect(jsonPath("$.categorySpending", hasSize(1)));
+
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/analytics", groupId)
+                        .param("splitType", "EXACT")
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expenseCount", is(1)))
+                .andExpect(jsonPath("$.totalSpending", is(50.00)));
+
+        // Both filters together match nothing, and the response says so instead of falling back
+        // to the unfiltered totals.
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/analytics", groupId)
+                        .param("payerId", userId.toString())
+                        .param("splitType", "EXACT")
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expenseCount", is(0)))
+                .andExpect(jsonPath("$.totalSpending", is(0.00)))
+                .andExpect(jsonPath("$.monthlyTrends", hasSize(0)))
+                .andExpect(jsonPath("$.categorySpending", hasSize(0)));
+    }
+
+    @Test
+    @DisplayName("CSV export applies the same payerId and splitType params as the on-page report")
+    void csvExportAppliesPayerAndSplitTypeParams() throws Exception {
+        UUID otherPayer = UUID.randomUUID();
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, userId, "Current user");
+
+        persistExpense("Own lunch", "200.00", userId, SplitType.EQUAL);
+        persistExpense("Friend cab", "50.00", otherPayer, SplitType.EXACT);
+
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/export/csv", groupId)
+                        .param("payerId", userId.toString())
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Own lunch")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Friend cab"))));
+
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/export/csv", groupId)
+                        .param("splitType", "EXACT")
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Friend cab")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Own lunch"))));
+    }
+
+    @Test
+    @DisplayName("Unknown split type filter value → 400 Bad Request rather than an ignored filter")
+    void analyticsRejectsUnknownSplitType() throws Exception {
+        mockMvc.perform(get("/api/groups/{groupId}/expenses/analytics", groupId)
+                        .param("splitType", "SPLIT_THE_BILL")
+                        .header("Authorization", "Bearer " + jwtToken))
+                .andExpect(status().isBadRequest());
     }
 }

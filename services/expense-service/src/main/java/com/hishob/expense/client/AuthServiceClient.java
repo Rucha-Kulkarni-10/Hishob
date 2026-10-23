@@ -35,7 +35,7 @@ public class AuthServiceClient {
     @Autowired
     public AuthServiceClient(
             @Value("${hishob.auth-service.base-url:http://localhost:8081}") String baseUrl,
-            @Value("${hishob.auth-service.internal-token:${hishob.internal.token:dev-internal-token-hishob-service-2026}}") String internalToken) {
+            @Value("${hishob.auth-service.internal-token:${hishob.internal.token}}") String internalToken) {
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .build();

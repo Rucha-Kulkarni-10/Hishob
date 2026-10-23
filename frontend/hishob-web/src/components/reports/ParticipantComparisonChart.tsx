@@ -128,7 +128,7 @@ export default function ParticipantComparisonChart(props: ParticipantComparisonC
       if (list.length === 0) return [];
 
       const maxVal = Math.max(
-        ...list.map((f) => Math.max(Number(f.userShare) || 0, Number(f.friendShare) || 0, Number(f.totalSpending) || 0)),
+        ...list.map((f) => Math.max(Number(f.userShare) || 0, Number(f.friendShare) || 0, Number(f.totalAmount) || 0)),
         1
       );
 
@@ -137,7 +137,7 @@ export default function ParticipantComparisonChart(props: ParticipantComparisonC
         const name = resolveSafeName(f.friendUserId, resolvedName, props.currentUserId);
         const userShare = Number(f.userShare) || 0;
         const friendShare = Number(f.friendShare) || 0;
-        const total = Number(f.totalSpending) || 0;
+        const total = Number(f.totalAmount) || 0;
 
         return {
           id: f.friendUserId,

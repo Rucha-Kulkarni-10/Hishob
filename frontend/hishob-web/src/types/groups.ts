@@ -21,14 +21,16 @@ export interface GroupResponse {
   updatedAt: string;   // ISO-8601 Instant
 }
 
-/** Response shape for GET /api/groups/{id}/members and POST add-member */
+/**
+ * Response shape for GET /api/groups/{id}/members and POST add-member.
+ * Members are addressed by userId, so no contact details are returned.
+ */
 export interface MemberResponse {
   id: string;          // GroupMember UUID
   userId: string;      // User UUID
   role: MemberRole;
   joinedAt: string;    // ISO-8601 Instant
   name: string;
-  email: string;
 }
 
 /** POST /api/groups request body */

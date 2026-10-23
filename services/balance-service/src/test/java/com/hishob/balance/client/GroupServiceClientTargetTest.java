@@ -24,7 +24,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class GroupServiceClientTargetTest {
 
     private static final String BASE_URL = "http://expense-service.test:8083";
-    private static final String TOKEN = "test-internal-token";
+    private static final String TOKEN = "hishob-test-internal-token-for-automated-tests-only";
 
     private RestClient.Builder builder;
     private MockRestServiceServer mockServer;

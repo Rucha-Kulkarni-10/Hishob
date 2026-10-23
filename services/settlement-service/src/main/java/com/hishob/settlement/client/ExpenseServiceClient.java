@@ -23,7 +23,7 @@ public class ExpenseServiceClient {
     @Autowired
     public ExpenseServiceClient(
             @Value("${hishob.expense-service.base-url:http://localhost:8083}") String baseUrl,
-            @Value("${hishob.expense-service.internal-token:${hishob.internal.token:dev-internal-token-hishob-service-2026}}") String internalToken) {
+            @Value("${hishob.expense-service.internal-token:${hishob.internal.token}}") String internalToken) {
 
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)

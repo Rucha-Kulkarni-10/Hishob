@@ -20,16 +20,27 @@ public class InternalAuthFilter extends OncePerRequestFilter {
     public static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
 
     /**
-     * The one service-to-service path under /api that may be authenticated by the internal token
-     * instead of a user JWT. It is not restricted to a hard 401 because Expense Service also
-     * calls it with only a forwarded user Authorization header.
+     * Service-to-service user lookup. Exposed under /api because the gateway has no internal
+     * route, so it shares the hard 401 treatment of /internal/** instead of falling through to
+     * the user-JWT chain. Both AuthServiceClient implementations always send the token.
      */
     public static final String SERVICE_API_PATH = "/api/auth/users/batch";
 
     private final String expectedToken;
 
     public InternalAuthFilter(
-            @Value("${hishob.internal.token:dev-internal-token-hishob-service-2026}") String expectedToken) {
+            @Value("${hishob.internal.token}") String expectedToken) {
+        if (expectedToken == null || expectedToken.isBlank()) {
+            throw new IllegalStateException("hishob.internal.token is not configured; set the INTERNAL_SERVICE_TOKEN environment variable for this service");
+        }
+        if (expectedToken.length() < 32) {
+            throw new IllegalStateException("hishob.internal.token must be at least 32 characters");
+        }
+        String value = expectedToken.toLowerCase();
+        if (value.contains("your-") || value.contains("replace-with") || value.contains("changeme")
+                || value.contains("change-me") || value.contains("placeholder") || value.contains("example-")) {
+            throw new IllegalStateException("hishob.internal.token still holds a template placeholder value");
+        }
         this.expectedToken = expectedToken;
     }
 
@@ -40,19 +51,15 @@ public class InternalAuthFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain) throws ServletException, IOException {
 
         String path = request.getRequestURI();
-        boolean strictInternal = path.startsWith("/internal/");
-        if (!strictInternal && !path.equals(SERVICE_API_PATH)) {
+        boolean serviceToService = path.startsWith("/internal/") || path.equals(SERVICE_API_PATH);
+        if (!serviceToService) {
             filterChain.doFilter(request, response);
             return;
         }
 
         String token = request.getHeader(INTERNAL_TOKEN_HEADER);
         if (token == null || token.isBlank() || !token.equals(expectedToken)) {
-            if (strictInternal) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                return;
-            }
-            filterChain.doFilter(request, response);
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 

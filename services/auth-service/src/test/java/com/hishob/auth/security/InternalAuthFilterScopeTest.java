@@ -120,7 +120,7 @@ class InternalAuthFilterScopeTest {
     }
 
     @Test
-    @DisplayName("Documented exception: /api/auth/users/batch still accepts the internal token — 200")
+    @DisplayName("/api/auth/users/batch accepts the internal token — 200")
     void testBatchEndpointStillAcceptsInternalToken() throws Exception {
         mockMvc.perform(post("/api/auth/users/batch")
                         .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, internalToken)
@@ -130,12 +130,22 @@ class InternalAuthFilterScopeTest {
     }
 
     @Test
-    @DisplayName("Documented exception: /api/auth/users/batch without the internal token is rejected — 403")
+    @DisplayName("/api/auth/users/batch without the internal token is rejected — 401")
     void testBatchEndpointWithoutInternalTokenIsRejected() throws Exception {
         mockMvc.perform(post("/api/auth/users/batch")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(List.of(UUID.randomUUID()))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("/api/auth/users/batch with a wrong internal token is rejected — 401")
+    void testBatchEndpointWithWrongInternalTokenIsRejected() throws Exception {
+        mockMvc.perform(post("/api/auth/users/batch")
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, WRONG_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(List.of(UUID.randomUUID()))))
+                .andExpect(status().isUnauthorized());
     }
 
     private ValidateAcceptedFriendshipsRequest validValidateRequest() {

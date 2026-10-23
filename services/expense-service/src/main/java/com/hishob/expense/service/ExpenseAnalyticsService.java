@@ -10,6 +10,7 @@ import com.hishob.expense.dto.PersonalAnalyticsResponse;
 import com.hishob.expense.entity.Expense;
 import com.hishob.expense.entity.ExpenseCategory;
 import com.hishob.expense.entity.ExpenseSplit;
+import com.hishob.expense.entity.SplitType;
 import com.hishob.expense.repository.ExpenseRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,7 +55,9 @@ public class ExpenseAnalyticsService {
             UUID groupId,
             UUID currentUserId,
             String startDateStr,
-            String endDateStr) {
+            String endDateStr,
+            UUID payerId,
+            SplitType splitType) {
 
         // 1. Authorization: check group existence and membership
         groupService.validateGroupExists(groupId);
@@ -64,8 +67,11 @@ public class ExpenseAnalyticsService {
         Instant startInstant = parseDateBoundary(startDateStr, false);
         Instant endInstant = parseDateBoundary(endDateStr, true);
 
-        // 3. Fetch expenses
-        List<Expense> expenses = fetchExpenses(groupId, startInstant, endInstant);
+        // 3. Fetch expenses, then apply the payer / split-type filters. Every section below
+        // (KPIs, member table, monthly trend, category donut) and the CSV export reads this same
+        // list, so a filter can never quietly apply to only part of the report.
+        List<Expense> expenses = applyPayerAndSplitFilters(
+                fetchExpenses(groupId, startInstant, endInstant), payerId, splitType);
 
         // 4. Calculate total spending, count, average
         long expenseCount = expenses.size();
@@ -196,7 +202,9 @@ public class ExpenseAnalyticsService {
             UUID groupId,
             UUID currentUserId,
             String startDateStr,
-            String endDateStr) {
+            String endDateStr,
+            UUID payerId,
+            SplitType splitType) {
 
         groupService.validateGroupExists(groupId);
         groupService.validateMember(groupId, currentUserId, "Current user");
@@ -204,7 +212,8 @@ public class ExpenseAnalyticsService {
         Instant startInstant = parseDateBoundary(startDateStr, false);
         Instant endInstant = parseDateBoundary(endDateStr, true);
 
-        List<Expense> expenses = fetchExpenses(groupId, startInstant, endInstant);
+        List<Expense> expenses = applyPayerAndSplitFilters(
+                fetchExpenses(groupId, startInstant, endInstant), payerId, splitType);
         // Sort chronological for CSV export
         List<Expense> sortedExpenses = new ArrayList<>(expenses);
         sortedExpenses.sort(Comparator.comparing(Expense::getCreatedAt));
@@ -220,7 +229,7 @@ public class ExpenseAnalyticsService {
             String categoryStr = formatCategoryName(e.getCategory());
             String amount = e.getTotalAmount().setScale(2, RoundingMode.HALF_UP).toPlainString();
             String paidBy = "User-" + e.getPaidBy().toString().substring(0, 8);
-            String splitType = e.getSplitType() != null ? e.getSplitType().name() : "EQUAL";
+            String splitTypeName = e.getSplitType() != null ? e.getSplitType().name() : "EQUAL";
             int participants = e.getSplits() != null ? e.getSplits().size() : 0;
 
             sb.append(dateStr).append(',')
@@ -228,7 +237,7 @@ public class ExpenseAnalyticsService {
                     .append(escapeCsv(categoryStr)).append(',')
                     .append(amount).append(',')
                     .append(paidBy).append(',')
-                    .append(splitType).append(',')
+                    .append(splitTypeName).append(',')
                     .append(participants).append("\r\n");
         }
 
@@ -450,6 +459,25 @@ public class ExpenseAnalyticsService {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Narrows a fetched expense list to the payer and split type chosen in the report filter bar.
+     * A null value means "not filtered". Expenses saved before {@code splitType} existed are read
+     * as EQUAL, matching how the CSV already labels them.
+     */
+    private List<Expense> applyPayerAndSplitFilters(List<Expense> expenses, UUID payerId, SplitType splitType) {
+        if (payerId == null && splitType == null) {
+            return expenses;
+        }
+        return expenses.stream()
+                .filter(e -> payerId == null || payerId.equals(e.getPaidBy()))
+                .filter(e -> splitType == null || splitType == effectiveSplitType(e))
+                .collect(Collectors.toList());
+    }
+
+    private static SplitType effectiveSplitType(Expense expense) {
+        return expense.getSplitType() != null ? expense.getSplitType() : SplitType.EQUAL;
     }
 
     private List<Expense> filterByDateRange(List<Expense> expenses, Instant start, Instant end) {

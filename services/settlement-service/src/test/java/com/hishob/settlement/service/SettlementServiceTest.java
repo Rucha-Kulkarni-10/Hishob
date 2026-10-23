@@ -25,12 +25,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -39,6 +43,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -555,6 +560,173 @@ class SettlementServiceTest {
         assertThat(resp.getId()).isEqualTo(saved.getId());
         assertThat(resp.getAmount()).isEqualByComparingTo("50.00");
         verify(settlementRepository).save(any(Settlement.class));
+    }
+
+    // ── #139 group settlement notes + duplicate-submit guard ──────────────────
+
+    @Test
+    @DisplayName("Record group settlement: notes from the request are stored on the settlement and echoed back")
+    void testRecordSettlement_NotesArePersistedWithTheSettlement() {
+        RecordSettlementRequest req = new RecordSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("100.00"));
+        req.setNotes("Cash given at the office");
+
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
+                createBalance(fromUserId, new BigDecimal("-150.00")),
+                createBalance(toUserId, new BigDecimal("150.00"))
+        ));
+        when(settlementRepository.findTopByGroupIdAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(invocation -> {
+            Settlement toSave = invocation.getArgument(0);
+            toSave.setId(UUID.randomUUID());
+            return toSave;
+        });
+
+        SettlementHistoryResponse resp = settlementService.recordSettlement(groupId, fromUserId, req);
+
+        // The group path used to have no notes field on RecordSettlementRequest, so Jackson
+        // silently dropped the value the UI sent.
+        assertThat(resp.getNotes()).isEqualTo("Cash given at the office");
+        verify(settlementRepository).save(argThat(settlement ->
+                "Cash given at the office".equals(settlement.getNotes())));
+    }
+
+    @Test
+    @DisplayName("Record group settlement: identical request already in flight is rejected before a second row is saved")
+    void testRecordSettlement_IdenticalRequestInFlight_SecondRejected() {
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
+                createBalance(fromUserId, new BigDecimal("-150.00")),
+                createBalance(toUserId, new BigDecimal("150.00"))
+        ));
+        // Both requests see an empty database: the first row is still uncommitted, so the
+        // 5-second query cannot be the thing that stops the retry.
+        when(settlementRepository.findTopByGroupIdAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+
+        List<String> retriedOutcome = new ArrayList<>();
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(invocation -> {
+            Settlement toSave = invocation.getArgument(0);
+            toSave.setId(UUID.randomUUID());
+            retriedOutcome.add(retryGroupSettlement());
+            return toSave;
+        });
+
+        settlementService.recordSettlement(groupId, fromUserId, groupSettlementRequest("100.00"));
+
+        assertThat(retriedOutcome).singleElement()
+                .asString().contains("already being recorded");
+        verify(settlementRepository, times(1)).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("Record personal settlement: identical request already in flight is rejected before a second row is saved")
+    void testRecordPersonalSettlement_IdenticalRequestInFlight_SecondRejected() {
+        doNothing().when(authServiceClient).validateAcceptedFriendship(fromUserId, toUserId);
+        when(balanceCalculationService.calculateFriendBalance(fromUserId, toUserId))
+                .thenReturn(friendBalance(fromUserId, toUserId, new BigDecimal("-150.00")));
+        when(settlementRepository
+                .findTopByGroupIdIsNullAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                        any(), any(), any(), any()))
+                .thenReturn(Optional.empty());
+
+        List<String> retriedOutcome = new ArrayList<>();
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(invocation -> {
+            Settlement toSave = invocation.getArgument(0);
+            toSave.setId(UUID.randomUUID());
+            RecordPersonalSettlementRequest retry = new RecordPersonalSettlementRequest();
+            retry.setToUserId(toUserId);
+            retry.setAmount(new BigDecimal("100.00"));
+            try {
+                settlementService.recordPersonalSettlement(fromUserId, retry);
+                retriedOutcome.add("accepted");
+            } catch (IllegalArgumentException e) {
+                retriedOutcome.add(e.getMessage());
+            }
+            return toSave;
+        });
+
+        RecordPersonalSettlementRequest req = new RecordPersonalSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal("100.00"));
+        settlementService.recordPersonalSettlement(fromUserId, req);
+
+        assertThat(retriedOutcome).singleElement()
+                .asString().contains("already being recorded");
+        verify(settlementRepository, times(1)).save(any(Settlement.class));
+    }
+
+    @Test
+    @DisplayName("In-flight guard: held while the transaction is open, released once it completes")
+    void testRecordSettlement_InFlightKeyReleasedOnlyAfterTransactionCompletion() {
+        RecordSettlementRequest req = groupSettlementRequest("100.00");
+
+        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupServiceClient).validateMember(groupId, fromUserId);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, toUserId);
+        when(balanceCalculationService.calculateGroupBalancesInternal(groupId)).thenReturn(groupBalances(
+                createBalance(fromUserId, new BigDecimal("-150.00")),
+                createBalance(toUserId, new BigDecimal("150.00"))
+        ));
+        when(settlementRepository.findTopByGroupIdAndFromUserIdAndToUserIdAndAmountAndCreatedAtAfterOrderByCreatedAtDesc(
+                any(), any(), any(), any(), any()
+        )).thenReturn(Optional.empty());
+        AtomicInteger saveCount = new AtomicInteger();
+        when(settlementRepository.save(any(Settlement.class))).thenAnswer(invocation -> {
+            Settlement toSave = invocation.getArgument(0);
+            toSave.setId(UUID.randomUUID());
+            saveCount.incrementAndGet();
+            return toSave;
+        });
+
+        // Stands in for the synchronization Spring's transaction manager installs around
+        // SettlementService.recordSettlement.
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            settlementService.recordSettlement(groupId, fromUserId, req);
+            assertThat(saveCount).hasValue(1);
+
+            assertThatThrownBy(() -> settlementService.recordSettlement(groupId, fromUserId, req))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("already being recorded");
+            assertThat(saveCount).hasValue(1);
+
+            for (TransactionSynchronization sync : TransactionSynchronizationManager.getSynchronizations()) {
+                sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+            }
+
+            // The first row is committed and visible to the 5-second guard by now, so the in-flight
+            // key must no longer block a genuinely new recording.
+            settlementService.recordSettlement(groupId, fromUserId, req);
+            assertThat(saveCount).hasValue(2);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    private RecordSettlementRequest groupSettlementRequest(String amount) {
+        RecordSettlementRequest req = new RecordSettlementRequest();
+        req.setToUserId(toUserId);
+        req.setAmount(new BigDecimal(amount));
+        return req;
+    }
+
+    private String retryGroupSettlement() {
+        try {
+            settlementService.recordSettlement(groupId, fromUserId, groupSettlementRequest("100.00"));
+            return "accepted";
+        } catch (IllegalArgumentException e) {
+            return e.getMessage();
+        }
     }
 
 }

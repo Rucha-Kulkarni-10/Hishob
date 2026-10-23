@@ -62,7 +62,9 @@ export default function SpendingOverviewCards({
         <div className="report-kpi-card__value">
           {isLoading ? '…' : formatINR(totalSettledVolume)}
         </div>
-        <div className="report-kpi-card__hint">Completed settlements</div>
+        {/* Settlements carry no date in the internal contract, so this one KPI is all-time and
+            deliberately does not respond to the filter bar. */}
+        <div className="report-kpi-card__hint">All-time, ignores filters</div>
       </div>
     </div>
   );

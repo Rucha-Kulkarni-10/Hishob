@@ -22,6 +22,17 @@ public class InternalAuthFilter extends OncePerRequestFilter {
     private final String expectedToken;
 
     public InternalAuthFilter(@Value("${hishob.internal.token}") String expectedToken) {
+        if (expectedToken == null || expectedToken.isBlank()) {
+            throw new IllegalStateException("hishob.internal.token is not configured; set the INTERNAL_SERVICE_TOKEN environment variable for this service");
+        }
+        if (expectedToken.length() < 32) {
+            throw new IllegalStateException("hishob.internal.token must be at least 32 characters");
+        }
+        String value = expectedToken.toLowerCase();
+        if (value.contains("your-") || value.contains("replace-with") || value.contains("changeme")
+                || value.contains("change-me") || value.contains("placeholder") || value.contains("example-")) {
+            throw new IllegalStateException("hishob.internal.token still holds a template placeholder value");
+        }
         this.expectedToken = expectedToken;
     }
 

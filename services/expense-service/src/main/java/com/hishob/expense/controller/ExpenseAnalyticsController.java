@@ -1,6 +1,7 @@
 package com.hishob.expense.controller;
 
 import com.hishob.expense.dto.GroupAnalyticsResponse;
+import com.hishob.expense.entity.SplitType;
 import com.hishob.expense.principal.AuthenticatedUser;
 import com.hishob.expense.service.ExpenseAnalyticsService;
 import org.springframework.http.HttpHeaders;
@@ -31,10 +32,12 @@ public class ExpenseAnalyticsController {
             @PathVariable UUID groupId,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) UUID payerId,
+            @RequestParam(required = false) SplitType splitType,
             @AuthenticationPrincipal AuthenticatedUser currentUser) {
 
         GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(
-                groupId, currentUser.getUserId(), startDate, endDate);
+                groupId, currentUser.getUserId(), startDate, endDate, payerId, splitType);
         return ResponseEntity.ok(response);
     }
 
@@ -43,10 +46,12 @@ public class ExpenseAnalyticsController {
             @PathVariable UUID groupId,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate,
+            @RequestParam(required = false) UUID payerId,
+            @RequestParam(required = false) SplitType splitType,
             @AuthenticationPrincipal AuthenticatedUser currentUser) {
 
         String csvData = analyticsService.exportExpensesCsv(
-                groupId, currentUser.getUserId(), startDate, endDate);
+                groupId, currentUser.getUserId(), startDate, endDate, payerId, splitType);
 
         byte[] csvBytes = csvData.getBytes(StandardCharsets.UTF_8);
 

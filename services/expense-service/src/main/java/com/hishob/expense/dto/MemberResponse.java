@@ -6,6 +6,10 @@ import com.hishob.expense.entity.MemberRole;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Group roster entry. Carries a display name only: group members are addressed by user ID,
+ * so contact details have no purpose here and must not spread across the roster.
+ */
 public class MemberResponse {
 
     private UUID id;
@@ -13,7 +17,6 @@ public class MemberResponse {
     private MemberRole role;
     private Instant joinedAt;
     private String name;
-    private String email;
 
     public MemberResponse() {
     }
@@ -25,13 +28,12 @@ public class MemberResponse {
         this.joinedAt = joinedAt;
     }
 
-    public MemberResponse(UUID id, UUID userId, MemberRole role, Instant joinedAt, String name, String email) {
+    public MemberResponse(UUID id, UUID userId, MemberRole role, Instant joinedAt, String name) {
         this.id = id;
         this.userId = userId;
         this.role = role;
         this.joinedAt = joinedAt;
         this.name = name;
-        this.email = email;
     }
 
     public static MemberResponse fromEntity(GroupMember member) {
@@ -43,14 +45,13 @@ public class MemberResponse {
         );
     }
 
-    public static MemberResponse fromEntity(GroupMember member, String name, String email) {
+    public static MemberResponse fromEntity(GroupMember member, String name) {
         return new MemberResponse(
                 member.getId(),
                 member.getUserId(),
                 member.getRole(),
                 member.getJoinedAt(),
-                name,
-                email
+                name
         );
     }
 
@@ -92,14 +93,6 @@ public class MemberResponse {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
     }
 
 }

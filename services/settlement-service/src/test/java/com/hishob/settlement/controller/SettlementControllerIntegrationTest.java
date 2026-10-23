@@ -14,6 +14,7 @@ import com.hishob.settlement.exception.GroupNotFoundException;
 import com.hishob.settlement.exception.InvalidRecipientException;
 import com.hishob.settlement.exception.PermissionDeniedException;
 import com.hishob.settlement.exception.ServiceUnavailableException;
+import com.hishob.settlement.repository.SettlementRepository;
 import com.hishob.settlement.security.JwtService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -56,6 +58,9 @@ class SettlementControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private SettlementRepository settlementRepository;
+
     @MockitoBean
     private GroupServiceClient groupServiceClient;
 
@@ -68,7 +73,7 @@ class SettlementControllerIntegrationTest {
     private MockMvc mockMvc;
 
     private static final String TEST_SECRET =
-            "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+            "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
 
     private UUID groupId;
     private UUID userA;
@@ -281,6 +286,55 @@ class SettlementControllerIntegrationTest {
                 .andExpect(jsonPath("$.amount", is(300.00)))
                 .andExpect(jsonPath("$.status", is("COMPLETED")))
                 .andExpect(jsonPath("$.createdAt").exists());
+    }
+
+    @Test
+    @DisplayName("Group settlement: notes survive request body → entity → response → history (regression: DTO dropped them)")
+    void recordSettlement_notesPersistEndToEnd() throws Exception {
+        stubHappyPath(userA);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, userB);
+
+        String notes = "Cash handed over at the office " + UUID.randomUUID();
+        String body = objectMapper.writeValueAsString(Map.of(
+                "toUserId", userB,
+                "amount", "150.00",
+                "notes", notes
+        ));
+
+        mockMvc.perform(post("/api/groups/" + groupId + "/settlements")
+                        .header("Authorization", "Bearer " + jwt(userA))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.notes", is(notes)));
+
+        mockMvc.perform(get("/api/groups/" + groupId + "/settlements/history")
+                        .header("Authorization", "Bearer " + jwt(userA)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.notes == '" + notes + "')]", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Group settlement: notes longer than 500 characters → 400 Bad Request and nothing stored")
+    void recordSettlement_notesTooLong_badRequest() throws Exception {
+        stubHappyPath(userA);
+        doNothing().when(groupServiceClient).validateRecipientMember(groupId, userB);
+
+        String longNotes = "n".repeat(501);
+        String body = objectMapper.writeValueAsString(Map.of(
+                "toUserId", userB,
+                "amount", "150.00",
+                "notes", longNotes
+        ));
+
+        mockMvc.perform(post("/api/groups/" + groupId + "/settlements")
+                        .header("Authorization", "Bearer " + jwt(userA))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest());
+
+        // groupId is random per test, so an empty history proves the request never reached the table.
+        assertThat(settlementRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).isEmpty();
     }
 
     @Test

@@ -1102,8 +1102,7 @@ button { cursor: pointer; font-family: inherit; }
 }
 
 .friend-card__email,
-.friend-request-card__email,
-.friend-search-result__email {
+.friend-request-card__email {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
   word-break: break-word;
@@ -1567,11 +1566,6 @@ button { cursor: pointer; font-family: inherit; }
   color: var(--color-text);
   display: inline-flex;
   align-items: center;
-}
-
-.members-table__email {
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
 }
 
 .members-table__id code {

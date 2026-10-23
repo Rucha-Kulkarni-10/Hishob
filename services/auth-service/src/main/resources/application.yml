@@ -9,7 +9,7 @@ spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hishob_auth}?currentSchema=${DB_SCHEMA:hishob_auth}&sslmode=${DB_SSLMODE:prefer}}
     username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
@@ -30,7 +30,7 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
 
 jwt:
-  secret: ${JWT_SECRET:d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026}
+  secret: ${JWT_SECRET}
   expiration: ${JWT_EXPIRATION:86400000}
 
 mailgun:
@@ -53,6 +53,6 @@ auth:
 
 hishob:
   internal:
-    token: ${INTERNAL_SERVICE_TOKEN:dev-internal-token-hishob-service-2026}
+    token: ${INTERNAL_SERVICE_TOKEN}
 
 

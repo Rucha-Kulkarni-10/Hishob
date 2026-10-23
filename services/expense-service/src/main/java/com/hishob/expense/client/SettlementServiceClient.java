@@ -66,7 +66,7 @@ public class SettlementServiceClient {
     @Autowired
     public SettlementServiceClient(
             @Value("${hishob.settlement-service.base-url:http://localhost:8085}") String baseUrl,
-            @Value("${hishob.settlement-service.internal-token:${hishob.internal.token:dev-internal-token-hishob-service-2026}}") String internalToken) {
+            @Value("${hishob.settlement-service.internal-token:${hishob.internal.token}}") String internalToken) {
 
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)

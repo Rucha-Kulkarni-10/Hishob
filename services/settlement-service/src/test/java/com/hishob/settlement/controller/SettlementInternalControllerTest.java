@@ -79,9 +79,9 @@ class SettlementInternalControllerTest {
     private MockMvc mockMvc;
 
     private static final String TEST_SECRET =
-            "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+            "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
 
-    private static final String INTERNAL_TOKEN = "test-internal-token";
+    private static final String INTERNAL_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
     private static final String WRONG_TOKEN    = "definitely-wrong-token";
 
     @BeforeEach

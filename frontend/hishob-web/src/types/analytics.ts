@@ -26,9 +26,14 @@ export interface CategorySpendingSummary {
   percentageOfTotal: number;
 }
 
+/**
+ * Mirrors com.hishob.expense.dto.FriendSpendingSummary — the backend names the volume field
+ * totalAmount, so the UI must not invent a totalSpending alias.
+ */
 export interface FriendSpendingSummary {
   friendUserId: string;
-  totalSpending: number;
+  friendName?: string;
+  totalAmount: number;
   expenseCount: number;
   userShare?: number;
   friendShare?: number;

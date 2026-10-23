@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.lang.reflect.Field;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -35,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -170,8 +172,8 @@ class GroupServiceTest {
         when(groupMemberRepository.existsByGroupIdAndUserId(groupId, creatorId)).thenReturn(true);
         when(groupMemberRepository.findByGroupId(groupId)).thenReturn(List.of(owner, member));
         when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
-                new UserSummaryData(creatorId, "Creator Name", "creator@example.com"),
-                new UserSummaryData(otherUserId, "Other Name", "other@example.com")
+                new UserSummaryData(creatorId, "Creator Name"),
+                new UserSummaryData(otherUserId, "Other Name")
         ));
 
         List<MemberResponse> members = groupService.listMembers(groupId, creatorId);
@@ -183,8 +185,9 @@ class GroupServiceTest {
                 .containsExactlyInAnyOrder(MemberRole.OWNER, MemberRole.MEMBER);
         assertThat(members).extracting(MemberResponse::getName)
                 .containsExactlyInAnyOrder("Creator Name", "Other Name");
-        assertThat(members).extracting(MemberResponse::getEmail)
-                .containsExactlyInAnyOrder("creator@example.com", "other@example.com");
+        assertThat(MemberResponse.class.getDeclaredFields())
+                .extracting(Field::getName)
+                .doesNotContain("email");
         verify(authServiceClient).getUsersBatch(any());
     }
 
@@ -205,7 +208,7 @@ class GroupServiceTest {
                     return gm;
                 });
         when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
-                new UserSummaryData(newUserId, "New User", "new@example.com")
+                new UserSummaryData(newUserId, "New User")
         ));
 
         MemberResponse resp = groupService.addMember(groupId, req, creatorId);
@@ -213,7 +216,6 @@ class GroupServiceTest {
         assertThat(resp.getUserId()).isEqualTo(newUserId);
         assertThat(resp.getRole()).isEqualTo(MemberRole.MEMBER);
         assertThat(resp.getName()).isEqualTo("New User");
-        assertThat(resp.getEmail()).isEqualTo("new@example.com");
         verify(authServiceClient).validateUserExists(newUserId);
         verify(authServiceClient).getUsersBatch(any());
 
@@ -278,8 +280,8 @@ class GroupServiceTest {
     }
 
     @Test
-    @DisplayName("Add member: notification attempted successfully")
-    void testAddMember_NotificationFailure_MemberStillAdded() {
+    @DisplayName("Add member: notification is attempted after the membership is saved")
+    void testAddMember_NotificationAttempted_MemberAdded() {
         UUID newUserId = UUID.randomUUID();
         AddMemberRequest req = new AddMemberRequest(newUserId);
 
@@ -301,6 +303,32 @@ class GroupServiceTest {
         assertThat(resp.getRole()).isEqualTo(MemberRole.MEMBER);
         verify(authServiceClient).validateUserExists(newUserId);
         verify(notificationServiceClient).createNotification(any(CreateNotificationRequest.class));
+    }
+
+    @Test
+    @DisplayName("Add member: a notification delivery failure must not abort the membership")
+    void testAddMember_NotificationThrows_MemberStillAdded() {
+        UUID newUserId = UUID.randomUUID();
+        AddMemberRequest req = new AddMemberRequest(newUserId);
+
+        when(groupMemberRepository.existsByGroupIdAndUserIdAndRole(groupId, creatorId, MemberRole.OWNER))
+                .thenReturn(true);
+        when(groupMemberRepository.existsByGroupIdAndUserId(groupId, newUserId)).thenReturn(false);
+        when(groupMemberRepository.save(any(GroupMember.class)))
+                .thenAnswer(inv -> {
+                    GroupMember gm = inv.getArgument(0);
+                    gm.setId(UUID.randomUUID());
+                    gm.setJoinedAt(Instant.now());
+                    return gm;
+                });
+        doThrow(new RuntimeException("Auth Service unavailable: cannot create notification"))
+                .when(notificationServiceClient).createNotification(any(CreateNotificationRequest.class));
+
+        MemberResponse resp = groupService.addMember(groupId, req, creatorId);
+
+        assertThat(resp.getUserId()).isEqualTo(newUserId);
+        assertThat(resp.getRole()).isEqualTo(MemberRole.MEMBER);
+        verify(groupMemberRepository).save(any(GroupMember.class));
     }
 
     // Consolidated in-process validation tests

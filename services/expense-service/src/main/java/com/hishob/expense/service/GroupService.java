@@ -17,6 +17,8 @@ import com.hishob.expense.exception.InvalidGroupException;
 import com.hishob.expense.exception.PermissionDeniedException;
 import com.hishob.expense.repository.GroupMemberRepository;
 import com.hishob.expense.repository.GroupRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class GroupService {
+
+    private static final Logger log = LoggerFactory.getLogger(GroupService.class);
 
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
@@ -69,6 +73,14 @@ public class GroupService {
     }
 
     @Transactional(readOnly = true)
+    public List<UUID> listGroupIdsForMember(UUID userId) {
+        return groupRepository.findAllByMemberUserId(userId)
+                .stream()
+                .map(Group::getId)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public GroupResponse getGroupDetail(UUID groupId, UUID currentUserId) {
         ensureMember(groupId, currentUserId);
         Group group = groupRepository.findById(groupId)
@@ -94,8 +106,7 @@ public class GroupService {
         return members.stream().map(m -> {
             UserSummaryData profile = userMap.get(m.getUserId());
             String name = profile != null ? profile.getName() : null;
-            String email = profile != null ? profile.getEmail() : null;
-            return new MemberResponse(m.getId(), m.getUserId(), m.getRole(), m.getJoinedAt(), name, email);
+            return new MemberResponse(m.getId(), m.getUserId(), m.getRole(), m.getJoinedAt(), name);
         }).collect(Collectors.toList());
     }
 
@@ -114,15 +125,14 @@ public class GroupService {
         GroupMember membership = new GroupMember(groupId, targetUserId, MemberRole.MEMBER);
         GroupMember saved = groupMemberRepository.save(membership);
 
-        // Send notification after successful member addition
+        // Best-effort: a delivery failure must not undo the membership created above.
         sendMemberAddedNotification(groupId, targetUserId, currentUserId);
 
         List<UserSummaryData> userSummaries = authServiceClient.getUsersBatch(List.of(targetUserId));
         UserSummaryData profile = userSummaries.isEmpty() ? null : userSummaries.get(0);
         String name = profile != null ? profile.getName() : null;
-        String email = profile != null ? profile.getEmail() : null;
 
-        return new MemberResponse(saved.getId(), saved.getUserId(), saved.getRole(), saved.getJoinedAt(), name, email);
+        return new MemberResponse(saved.getId(), saved.getUserId(), saved.getRole(), saved.getJoinedAt(), name);
     }
 
     private void ensureMember(UUID groupId, UUID userId) {
@@ -201,7 +211,12 @@ public class GroupService {
                 Map.of("addedBy", addedByUserId.toString())
         );
 
-        notificationServiceClient.createNotification(notificationRequest);
+        try {
+            notificationServiceClient.createNotification(notificationRequest);
+        } catch (Exception e) {
+            log.warn("Failed to dispatch GROUP_MEMBER_ADDED notification for group {} to user {}: {}",
+                    groupId, targetUserId, e.toString());
+        }
     }
 
 }

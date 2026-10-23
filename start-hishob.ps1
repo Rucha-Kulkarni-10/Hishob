@@ -141,6 +141,55 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
+# ── Validate service environment ─────────────────────────────
+# The service ymls carry no credential fallbacks, so a missing variable would fail
+# deep inside the JVM. Check every required name here instead, before any window opens.
+function Get-ServiceEnvVariables {
+    param([string]$ServiceName)
+    $envFile = "$ROOT\services\$ServiceName\.env"
+    $values = @{}
+    if (-not (Test-Path $envFile)) { return $null }
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match '^\s*([^#][^=]+)\s*=\s*(.*)$') {
+            $values[$matches[1].Trim()] = $matches[2].Trim()
+        }
+    }
+    return $values
+}
+
+$serviceRequirements = [ordered]@{
+    "auth-service"       = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
+    "expense-service"    = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_SCHEMA", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
+    "settlement-service" = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_SCHEMA", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
+}
+$placeholderPattern = '(?i)(your-|replace-with|changeme|change-me|placeholder|example-)'
+
+Write-Step "Validating service environment files..."
+$envProblems = @()
+foreach ($service in $serviceRequirements.Keys) {
+    $values = Get-ServiceEnvVariables -ServiceName $service
+    if ($null -eq $values) {
+        $envProblems += "$service : no services\$service\.env file"
+        continue
+    }
+    foreach ($name in $serviceRequirements[$service]) {
+        if (-not $values.Contains($name)) {
+            $envProblems += "$service : $name is not set"
+        } elseif ([string]::IsNullOrWhiteSpace($values[$name])) {
+            $envProblems += "$service : $name is empty"
+        } elseif ($values[$name] -match $placeholderPattern) {
+            $envProblems += "$service : $name still contains a template placeholder"
+        }
+    }
+}
+if ($envProblems.Count -gt 0) {
+    foreach ($problem in $envProblems) { Write-Fail $problem }
+    Write-Host "         Only variable names are printed, never values." -ForegroundColor DarkGray
+    Write-Host "         Copy services\<service>\.env.example and fill in every required entry." -ForegroundColor Yellow
+    exit 1
+}
+Write-OK "Environment ready for: $($serviceRequirements.Keys -join ', ')"
+
 # ── Banner ───────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  HISHOB Backend Startup" -ForegroundColor Magenta

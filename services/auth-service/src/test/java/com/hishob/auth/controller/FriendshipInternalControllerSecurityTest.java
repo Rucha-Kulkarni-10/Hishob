@@ -31,7 +31,7 @@ class FriendshipInternalControllerSecurityTest {
 
     private MockMvc mockMvc;
 
-    private static final String VALID_TOKEN = "dev-internal-token-hishob-service-2026";
+    private static final String VALID_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
     private static final String WRONG_TOKEN = "wrong-internal-token";
 
     @BeforeEach

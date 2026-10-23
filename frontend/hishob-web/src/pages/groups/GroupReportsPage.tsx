@@ -14,12 +14,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getGroupDetail, listMembers } from '@/services/groupService';
 import { getGroupAnalytics, exportGroupExpensesCsv } from '@/services/analyticsService';
+import type { GroupAnalyticsQueryParams } from '@/services/analyticsService';
 import type { GroupResponse, MemberResponse } from '@/types/groups';
 import type {
   GroupAnalyticsResponse,
   TimeRangeOption,
   SplitTypeFilter,
-  MemberSpendingSummary,
 } from '@/types/analytics';
 import { useAuth } from '@/hooks/useAuth';
 import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
@@ -215,17 +215,24 @@ export default function GroupReportsPage() {
     }
   }, []);
 
-  // Load analytics with current date filters
+  // Query sent to the analytics and CSV endpoints. payerId and splitType belong here as well:
+  // the backend applies them to the KPI totals, member table, monthly trend, category donut and
+  // CSV export, so the filter bar can no longer describe one section while another ignores it.
+  const analyticsQuery = useMemo<GroupAnalyticsQueryParams>(() => ({
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    payerId: payerId || undefined,
+    splitType: splitType === 'ALL' ? undefined : splitType,
+  }), [startDate, endDate, payerId, splitType]);
+
+  // Load analytics with the current filter selection
   const loadAnalytics = useCallback(
-    async (gId: string, sDate?: string, eDate?: string) => {
+    async (gId: string, query: GroupAnalyticsQueryParams) => {
       await Promise.resolve();
       setAnalyticsLoading(true);
       setAnalyticsError(null);
       try {
-        const data = await getGroupAnalytics(gId, {
-          startDate: sDate || undefined,
-          endDate: eDate || undefined,
-        });
+        const data = await getGroupAnalytics(gId, query);
         setAnalytics(data);
       } catch (err) {
         setAnalyticsError(getErrorMessage(err));
@@ -246,9 +253,9 @@ export default function GroupReportsPage() {
   useEffect(() => {
     if (!groupId || pageLoading || is404 || is403 || pageError) return;
     queueMicrotask(() => {
-      void loadAnalytics(groupId, startDate, endDate);
+      void loadAnalytics(groupId, analyticsQuery);
     });
-  }, [groupId, pageLoading, is404, is403, pageError, startDate, endDate, loadAnalytics]);
+  }, [groupId, pageLoading, is404, is403, pageError, analyticsQuery, loadAnalytics]);
 
   // Handler for filter bar changes
   const handleFilterChange = (filters: {
@@ -279,10 +286,7 @@ export default function GroupReportsPage() {
     setIsExporting(true);
     setExportError(null);
     try {
-      const blob = await exportGroupExpensesCsv(groupId, {
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-      });
+      const blob = await exportGroupExpensesCsv(groupId, analyticsQuery);
       const csvText = await blob.text();
       const transformedCsv = transformCsvPaidBy(csvText, memberPrefixNames, memberNames);
       const newBlob = new Blob([transformedCsv], {
@@ -308,12 +312,13 @@ export default function GroupReportsPage() {
     window.print();
   };
 
-  // Filter member spending list if a specific payer is selected
-  const filteredMemberSpending: MemberSpendingSummary[] = useMemo(() => {
-    if (!analytics?.memberSpending) return [];
-    if (!payerId) return analytics.memberSpending;
-    return analytics.memberSpending.filter((m) => m.userId === payerId);
-  }, [analytics, payerId]);
+  // The member table is no longer filtered in the browser — the backend already restricted the
+  // whole response to the selected payer and split type.
+  const isFilterActive = Boolean(
+    analyticsQuery.startDate || analyticsQuery.endDate || analyticsQuery.payerId || analyticsQuery.splitType
+  );
+  const hasNoMatchingExpenses =
+    !analyticsLoading && !analyticsError && (analytics?.expenseCount ?? 0) === 0;
 
   // Render guards
   if (pageLoading) {
@@ -401,7 +406,7 @@ export default function GroupReportsPage() {
           <button
             type="button"
             className="btn btn--ghost btn--sm"
-            onClick={() => groupId && loadAnalytics(groupId, startDate, endDate)}
+            onClick={() => groupId && loadAnalytics(groupId, analyticsQuery)}
             disabled={analyticsLoading}
             aria-label="Refresh report"
           >
@@ -447,13 +452,37 @@ export default function GroupReportsPage() {
           <button
             type="button"
             className="btn btn--ghost btn--sm"
-            onClick={() => groupId && loadAnalytics(groupId, startDate, endDate)}
+            onClick={() => groupId && loadAnalytics(groupId, analyticsQuery)}
           >
             Retry
           </button>
         </div>
       )}
 
+      {/* No results: say so plainly instead of showing a page of ₹0.00 cards that look like data */}
+      {hasNoMatchingExpenses ? (
+        <EmptyState
+          icon="📊"
+          heading="No expenses in this selection"
+          description={
+            isFilterActive
+              ? 'No expenses in this group match the filters you applied. Clear them to see the full report.'
+              : 'This group has no expenses yet. Add an expense to see spending analytics and trends.'
+          }
+          action={
+            isFilterActive ? (
+              <button type="button" className="btn btn--primary" onClick={handleResetFilters}>
+                Clear filters
+              </button>
+            ) : (
+              <Link to={`/groups/${groupId}`} className="btn btn--primary">
+                Back to group
+              </Link>
+            )
+          }
+        />
+      ) : (
+        <>
       {/* 1. Financial Overview Section */}
       <section className="group-details-section" aria-label="Financial Overview">
         <div className="page-header page-header--section">
@@ -488,7 +517,7 @@ export default function GroupReportsPage() {
         ) : (
           <ParticipantComparisonChart
             mode="GROUP"
-            items={filteredMemberSpending}
+            items={analytics?.memberSpending ?? []}
             memberNames={memberNames}
             currentUserId={user?.id ?? null}
           />
@@ -529,6 +558,8 @@ export default function GroupReportsPage() {
           />
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }

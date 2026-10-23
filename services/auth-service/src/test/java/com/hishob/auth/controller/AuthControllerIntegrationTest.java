@@ -175,7 +175,7 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /api/auth/users/{userId} - Should return user summary when authenticated")
+    @DisplayName("GET /api/auth/users/{userId} - Returns identity only, never contact details")
     void testGetUserById_Success() throws Exception {
         RegisterRequest registerReq = new RegisterRequest("Target User", "target@example.com", "mypassword");
         MvcResult registerResult = mockMvc.perform(post("/api/auth/register")
@@ -196,7 +196,7 @@ class AuthControllerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(targetUserId))
                 .andExpect(jsonPath("$.name").value("Target User"))
-                .andExpect(jsonPath("$.email").value("target@example.com"));
+                .andExpect(jsonPath("$.email").doesNotExist());
     }
 
     @Test
@@ -228,40 +228,7 @@ class AuthControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST /api/auth/users/batch - Should return user summaries with Bearer JWT")
-    void testGetUsersBatch_WithJwt() throws Exception {
-        RegisterRequest user1 = new RegisterRequest("User One", "user1@example.com", "password123");
-        RegisterRequest user2 = new RegisterRequest("User Two", "user2@example.com", "password123");
-
-        MvcResult res1 = mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user1)))
-                .andExpect(status().isCreated())
-                .andReturn();
-
-        MvcResult res2 = mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(user2)))
-                .andExpect(status().isCreated())
-                .andReturn();
-
-        AuthResponse auth1 = objectMapper.readValue(res1.getResponse().getContentAsString(), AuthResponse.class);
-        AuthResponse auth2 = objectMapper.readValue(res2.getResponse().getContentAsString(), AuthResponse.class);
-
-        java.util.List<java.util.UUID> requestedIds = java.util.List.of(auth1.getUser().getId(), auth2.getUser().getId());
-
-        mockMvc.perform(post("/api/auth/users/batch")
-                        .header("Authorization", "Bearer " + auth1.getAccessToken())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(requestedIds)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(2)))
-                .andExpect(jsonPath("$[?(@.name == 'User One')].email").value("user1@example.com"))
-                .andExpect(jsonPath("$[?(@.name == 'User Two')].email").value("user2@example.com"));
-    }
-
-    @Test
-    @DisplayName("POST /api/auth/users/batch - Should authenticate with X-Internal-Token")
+    @DisplayName("POST /api/auth/users/batch - Service token returns names but never contact details")
     void testGetUsersBatch_WithInternalToken() throws Exception {
         RegisterRequest user1 = new RegisterRequest("Internal Target", "internal@example.com", "password123");
         MvcResult res1 = mockMvc.perform(post("/api/auth/register")
@@ -274,13 +241,32 @@ class AuthControllerIntegrationTest {
         java.util.List<java.util.UUID> requestedIds = java.util.List.of(auth1.getUser().getId());
 
         mockMvc.perform(post("/api/auth/users/batch")
-                        .header("X-Internal-Token", "dev-internal-token-hishob-service-2026")
+                        .header("X-Internal-Token", "hishob-test-internal-token-for-automated-tests-only")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(requestedIds)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", org.hamcrest.Matchers.hasSize(1)))
                 .andExpect(jsonPath("$[0].name").value("Internal Target"))
-                .andExpect(jsonPath("$[0].email").value("internal@example.com"));
+                .andExpect(jsonPath("$[0].email").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/users/batch - A user JWT alone cannot reach the service lookup")
+    void testGetUsersBatch_WithJwtOnlyIsRejected() throws Exception {
+        RegisterRequest user1 = new RegisterRequest("User One", "user1@example.com", "password123");
+        MvcResult res1 = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(user1)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        AuthResponse auth1 = objectMapper.readValue(res1.getResponse().getContentAsString(), AuthResponse.class);
+
+        mockMvc.perform(post("/api/auth/users/batch")
+                        .header("Authorization", "Bearer " + auth1.getAccessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.List.of(auth1.getUser().getId()))))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -289,7 +275,7 @@ class AuthControllerIntegrationTest {
         mockMvc.perform(post("/api/auth/users/batch")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(java.util.List.of(java.util.UUID.randomUUID()))))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
 }

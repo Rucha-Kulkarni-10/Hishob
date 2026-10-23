@@ -5,6 +5,13 @@ import java.util.UUID;
 
 public class PersonalBalanceResponse {
 
+    /**
+     * One row of {@code GET /api/personal-balances}.
+     *
+     * <p>For the requesting user this is their position across the whole personal graph. For every
+     * other user it is the pairwise standing between them and the requesting user only — money that
+     * moves directly between those two, never that person's debts to third parties.
+     */
     private UUID userId;
     private BigDecimal totalPaid;
     private BigDecimal totalShare;

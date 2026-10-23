@@ -61,7 +61,7 @@ class BalanceControllerIntegrationTest {
     private MockMvc mockMvc;
 
     private static final String TEST_SECRET =
-            "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+            "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
 
     private UUID groupId;
     private UUID userA;
@@ -454,7 +454,7 @@ class BalanceControllerIntegrationTest {
                         split(userA, "300.00"), split(userB, "300.00"))));
 
         mockMvc.perform(get("/internal/personal-balances/users/" + userA + "/friends/" + userB)
-                        .header("X-Internal-Token", "test-internal-token"))
+                        .header("X-Internal-Token", "hishob-test-internal-token-for-automated-tests-only"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentUserId", is(userA.toString())))
                 .andExpect(jsonPath("$.friendUserId", is(userB.toString())))

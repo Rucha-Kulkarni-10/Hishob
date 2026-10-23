@@ -20,7 +20,7 @@ public class NotificationServiceClient {
     // client becomes irrelevant once Group is retired. Retargeted to Auth for consistency.
     public NotificationServiceClient(
             @Value("${hishob.auth-service.base-url:http://localhost:8081}") String baseUrl,
-            @Value("${hishob.internal.token:dev-internal-token-hishob-service-2026}") String internalToken) {
+            @Value("${hishob.internal.token}") String internalToken) {
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .build();

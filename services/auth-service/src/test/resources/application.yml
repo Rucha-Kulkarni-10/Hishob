@@ -26,7 +26,7 @@ eureka:
     fetch-registry: false
 
 jwt:
-  secret: d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026
+  secret: hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef
   expiration: 86400000
 
 mailgun:
@@ -39,5 +39,11 @@ auth:
     resend-cooldown-seconds: 60
     frontend-url: http://localhost:3000
     verification-path: /verify-email
+
+# InternalAuthFilter reads hishob.internal.token with no fallback, so the test
+# context must supply it. Test-only value; it never appears in src/main.
+hishob:
+  internal:
+    token: hishob-test-internal-token-for-automated-tests-only
 
 

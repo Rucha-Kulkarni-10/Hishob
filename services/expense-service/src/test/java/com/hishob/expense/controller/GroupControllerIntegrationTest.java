@@ -6,6 +6,7 @@ import com.hishob.expense.client.NotificationServiceClient;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.dto.AddMemberRequest;
 import com.hishob.expense.dto.CreateGroupRequest;
+import com.hishob.expense.dto.CreateNotificationRequest;
 import com.hishob.expense.dto.UserSummaryData;
 import com.hishob.expense.entity.Group;
 import com.hishob.expense.entity.GroupMember;
@@ -34,6 +35,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.any;
@@ -74,7 +76,7 @@ class GroupControllerIntegrationTest {
 
     private MockMvc mockMvc;
 
-    private static final String TEST_SECRET = "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+    private static final String TEST_SECRET = "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
     private static final long TEST_EXPIRATION = 3600000L;
 
     private UUID ownerId;
@@ -203,15 +205,15 @@ class GroupControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET /api/groups/{id}/members — member lists members")
+    @DisplayName("GET /api/groups/{id}/members — roster exposes names, never contact details")
     void testListMembers() throws Exception {
         Group group = createGroupAsOwner();
         addMember(group.getId(), memberId, MemberRole.MEMBER);
         String token = jwt(ownerId, "owner@test.com");
 
         org.mockito.Mockito.when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
-                new UserSummaryData(ownerId, "Owner Name", "owner@test.com"),
-                new UserSummaryData(memberId, "Member Name", "member@test.com")
+                new UserSummaryData(ownerId, "Owner Name"),
+                new UserSummaryData(memberId, "Member Name")
         ));
 
         mockMvc.perform(get("/api/groups/" + group.getId() + "/members")
@@ -221,7 +223,20 @@ class GroupControllerIntegrationTest {
                 .andExpect(jsonPath("$[0].userId").isNotEmpty())
                 .andExpect(jsonPath("$[0].role").isNotEmpty())
                 .andExpect(jsonPath("$[?(@.userId == '" + ownerId + "')].name").value("Owner Name"))
-                .andExpect(jsonPath("$[?(@.userId == '" + memberId + "')].name").value("Member Name"));
+                .andExpect(jsonPath("$[?(@.userId == '" + memberId + "')].name").value("Member Name"))
+                .andExpect(jsonPath("$[*].email").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/groups/{id}/members — non-member gets 403 and no member data")
+    void testListMembers_NonMember_Forbidden() throws Exception {
+        Group group = createGroupAsOwner();
+        addMember(group.getId(), memberId, MemberRole.MEMBER);
+        String nonMemberToken = jwt(nonMemberId, "non@test.com");
+
+        mockMvc.perform(get("/api/groups/" + group.getId() + "/members")
+                        .header("Authorization", "Bearer " + nonMemberToken))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -231,7 +246,7 @@ class GroupControllerIntegrationTest {
         UUID newUserId = UUID.randomUUID();
         doNothing().when(authServiceClient).validateUserExists(newUserId);
         org.mockito.Mockito.when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
-                new UserSummaryData(newUserId, "New Added User", "added@test.com")
+                new UserSummaryData(newUserId, "New Added User")
         ));
 
         String token = jwt(ownerId, "owner@test.com");
@@ -245,7 +260,44 @@ class GroupControllerIntegrationTest {
                 .andExpect(jsonPath("$.userId", is(newUserId.toString())))
                 .andExpect(jsonPath("$.role", is("MEMBER")))
                 .andExpect(jsonPath("$.name", is("New Added User")))
-                .andExpect(jsonPath("$.email", is("added@test.com")));
+                .andExpect(jsonPath("$.email").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("POST /api/groups/{id}/members — a notification delivery failure does not roll back the committed membership")
+    void testAddMember_NotificationDispatchFails_MembershipStillPersisted() throws Exception {
+        Group group = createGroupAsOwner();
+        UUID newUserId = UUID.randomUUID();
+        doNothing().when(authServiceClient).validateUserExists(newUserId);
+        org.mockito.Mockito.when(authServiceClient.getUsersBatch(any())).thenReturn(List.of(
+                new UserSummaryData(newUserId, "Resilient Member")
+        ));
+        doThrow(new RuntimeException("Auth Service unavailable: cannot create notification"))
+                .when(notificationServiceClient).createNotification(any(CreateNotificationRequest.class));
+
+        String token = jwt(ownerId, "owner@test.com");
+        AddMemberRequest req = new AddMemberRequest(newUserId);
+
+        mockMvc.perform(post("/api/groups/" + group.getId() + "/members")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.userId", is(newUserId.toString())))
+                .andExpect(jsonPath("$.role", is("MEMBER")));
+
+        // The membership has to survive as a transaction of its own, so the roster is re-read over
+        // HTTP after the failed dispatch instead of trusting the add-member response body.
+        mockMvc.perform(get("/api/groups/" + group.getId() + "/members")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)))
+                .andExpect(jsonPath("$[?(@.userId == '" + newUserId + "')]", hasSize(1)));
+
+        // ...and the row really is in H2, not merely in an uncommitted persistence context.
+        assertThat(groupMemberRepository.findByGroupId(group.getId()))
+                .extracting(GroupMember::getUserId)
+                .containsExactlyInAnyOrder(ownerId, newUserId);
     }
 
     @Test
