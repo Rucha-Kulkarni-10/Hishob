@@ -1,0 +1,4 @@
+# Externalized Configuration for HISHOB Notification Service
+hishob:
+  notification-service:
+    placeholder: true

@@ -2,6 +2,7 @@ package com.hishob.group.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -28,8 +29,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/internal/**").authenticated()
+                        .requestMatchers("/health").permitAll()
+                        // Group writes belong to Expense Service; this service is read-only.
+                        .requestMatchers(HttpMethod.POST, "/api/groups/**").denyAll()
+                        .requestMatchers(InternalAuthFilter.INTERNAL_MATCHER).hasAuthority(InternalAuthFilter.INTERNAL_SERVICE_AUTHORITY)
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(internalAuthFilter, UsernamePasswordAuthenticationFilter.class)

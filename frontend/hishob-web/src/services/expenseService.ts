@@ -12,7 +12,14 @@ import type {
   CreateExpenseRequest,
   ExpenseResponse,
 } from '@/types/expenses';
+import type { DashboardOverviewResponse } from '@/types/dashboard';
 import api from './api';
+
+/** GET /api/expenses/overview — combined group + personal expense totals for the current user. */
+export async function getDashboardOverview(): Promise<DashboardOverviewResponse> {
+  const response = await api.get<DashboardOverviewResponse>('/api/expenses/overview');
+  return response.data;
+}
 
 /** POST /api/expenses — create a new expense. Returns 201 on success. */
 export async function createExpense(

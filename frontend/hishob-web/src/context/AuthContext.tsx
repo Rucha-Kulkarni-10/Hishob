@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AuthContext } from './authContextTypes';
 import { getCurrentUser, login as apiLogin, register as apiRegister } from '@/services/authService';
-import type { LoginRequest, RegisterRequest, User } from '@/types/auth';
+import type { AuthResponse, LoginRequest, RegisterRequest, User } from '@/types/auth';
 import { getToken, removeToken, setToken } from '@/utils/tokenStorage';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -50,16 +50,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (data: LoginRequest) => {
     const response = await apiLogin(data);
-    setToken(response.accessToken);
-    setUser(response.user);
+    if (response.accessToken) {
+      setToken(response.accessToken);
+    }
+    if (response.user) {
+      setUser(response.user);
+    }
   }, []);
 
-  const register = useCallback(async (data: RegisterRequest) => {
-    // The HISHOB register endpoint returns an AuthResponse with a JWT,
-    // so we authenticate the user immediately after registration.
+  const register = useCallback(async (data: RegisterRequest): Promise<AuthResponse> => {
     const response = await apiRegister(data);
-    setToken(response.accessToken);
-    setUser(response.user);
+    // When email verification is required, do NOT authenticate the user or save a token
+    if (!response.emailVerificationRequired && response.accessToken) {
+      setToken(response.accessToken);
+      if (response.user) {
+        setUser(response.user);
+      }
+    }
+    return response;
   }, []);
 
   const logout = useCallback(() => {

@@ -299,10 +299,11 @@ export default function PersonalBalancesPage() {
                   const friendName = resolveMemberName(item.userId, user?.id, friends);
                   const initial = (friendName.charAt(0) || '?').toUpperCase();
                   
-                  // In personal balance calculation:
-                  // item.netBalance > 0 means the friend is a creditor -> current user owes friend item.netBalance
-                  // item.netBalance < 0 means the friend is a debtor -> friend owes current user Math.abs(item.netBalance)
-                  // item.netBalance === 0 means settled up
+                  // Pairwise standing with this friend, straight from GET /api/personal-balances:
+                  // item.netBalance > 0 means the current user owes the friend exactly that amount,
+                  // which is also the amount the settlement endpoint accepts for them.
+                  // item.netBalance < 0 means the friend owes the current user that amount.
+                  // item.netBalance === 0 means the two of them are settled up.
                   const userOwesFriend = item.netBalance > 0;
                   const friendOwesUser = item.netBalance < 0;
                   const isSettled = item.netBalance === 0;
@@ -362,11 +363,11 @@ export default function PersonalBalancesPage() {
                       {/* Card Meta: Total Paid & Total Share */}
                       <div className="friend-balance-card__meta-grid">
                         <div className="friend-balance-card__meta-item">
-                          <span className="friend-balance-card__meta-label">Paid</span>
+                          <span className="friend-balance-card__meta-label">Paid for you</span>
                           <span className="friend-balance-card__meta-value">₹{formatAmount(item.totalPaid)}</span>
                         </div>
                         <div className="friend-balance-card__meta-item">
-                          <span className="friend-balance-card__meta-label">Share</span>
+                          <span className="friend-balance-card__meta-label">You paid</span>
                           <span className="friend-balance-card__meta-value">₹{formatAmount(item.totalShare)}</span>
                         </div>
                       </div>

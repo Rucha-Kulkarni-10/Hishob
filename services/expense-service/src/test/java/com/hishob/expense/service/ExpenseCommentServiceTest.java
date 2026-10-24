@@ -1,6 +1,6 @@
 package com.hishob.expense.service;
 
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.client.NotificationServiceClient;
 import com.hishob.expense.dto.CreateExpenseCommentRequest;
 import com.hishob.expense.dto.CreateNotificationRequest;
@@ -53,7 +53,7 @@ class ExpenseCommentServiceTest {
     private ExpenseCommentRepository expenseCommentRepository;
 
     @Mock
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @Mock
     private NotificationServiceClient notificationServiceClient;
@@ -74,7 +74,7 @@ class ExpenseCommentServiceTest {
         service = new ExpenseCommentService(
                 expenseRepository,
                 expenseCommentRepository,
-                groupServiceClient,
+                groupService,
                 notificationServiceClient
         );
 
@@ -117,8 +117,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("1. Authorized group member can list comments in chronological order")
     void testListComments_GroupMember_Success() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         ExpenseComment c1 = new ExpenseComment(groupExpense, creatorId, "First comment");
         c1.setId(UUID.randomUUID());
@@ -144,9 +144,9 @@ class ExpenseCommentServiceTest {
     @DisplayName("2. Non-group member cannot list comments (PermissionDeniedException)")
     void testListComments_NonGroupMember_Forbidden() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupService).validateGroupExists(groupId);
         doThrow(new PermissionDeniedException("Caller is not a member of this group"))
-                .when(groupServiceClient).validateMember(groupId, strangerId, "Caller");
+                .when(groupService).validateMember(groupId, strangerId, "Caller");
 
         assertThrows(PermissionDeniedException.class, () -> service.listComments(expenseId, strangerId));
     }
@@ -181,8 +181,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("5. Authorized group member creates comment and notifies other participants")
     void testCreateComment_GroupMember_NotifiesOthers() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         when(expenseCommentRepository.save(any(ExpenseComment.class))).thenAnswer(inv -> {
             ExpenseComment entity = inv.getArgument(0);
@@ -253,8 +253,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("7. Safe comment preview truncates content longer than 80 characters")
     void testCreateComment_LongPreviewTruncated() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         when(expenseCommentRepository.save(any(ExpenseComment.class))).thenAnswer(inv -> {
             ExpenseComment entity = inv.getArgument(0);
@@ -280,8 +280,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("8. Notification service failure does not fail comment creation")
     void testCreateComment_NotificationFailure_CommentStillCreated() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         when(expenseCommentRepository.save(any(ExpenseComment.class))).thenAnswer(inv -> {
             ExpenseComment entity = inv.getArgument(0);
@@ -305,8 +305,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("9. Author can edit their own comment without triggering notifications")
     void testUpdateComment_Author_Success_NoNotification() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         UUID commentId = UUID.randomUUID();
         ExpenseComment existing = new ExpenseComment(groupExpense, memberId, "Original text");
@@ -330,8 +330,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("10. Non-author cannot edit comment even if group member")
     void testUpdateComment_NonAuthor_Forbidden() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, creatorId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, creatorId, "Caller");
 
         UUID commentId = UUID.randomUUID();
         ExpenseComment existing = new ExpenseComment(groupExpense, memberId, "Original text");
@@ -348,8 +348,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("11. Updating comment ID from another expense throws ExpenseCommentNotFoundException")
     void testUpdateComment_MismatchedExpense_NotFound() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         Expense otherExpense = new Expense(groupId, "Other", new BigDecimal("50"), payerId, creatorId, SplitType.EQUAL);
         otherExpense.setId(UUID.randomUUID());
@@ -368,8 +368,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("12. Author can delete their own comment without triggering notifications")
     void testDeleteComment_Author_Success_NoNotification() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, memberId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, memberId, "Caller");
 
         UUID commentId = UUID.randomUUID();
         ExpenseComment existing = new ExpenseComment(groupExpense, memberId, "To delete");
@@ -387,8 +387,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("13. Expense creator can delete another user's comment (moderation)")
     void testDeleteComment_ExpenseCreator_Success() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, creatorId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, creatorId, "Caller");
 
         UUID commentId = UUID.randomUUID();
         ExpenseComment existing = new ExpenseComment(groupExpense, memberId, "Member comment");
@@ -405,8 +405,8 @@ class ExpenseCommentServiceTest {
     @DisplayName("14. Non-author non-creator cannot delete comment (PermissionDeniedException)")
     void testDeleteComment_UnrelatedUser_Forbidden() {
         when(expenseRepository.findById(expenseId)).thenReturn(Optional.of(groupExpense));
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, payerId, "Caller");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, payerId, "Caller");
 
         UUID commentId = UUID.randomUUID();
         ExpenseComment existing = new ExpenseComment(groupExpense, memberId, "Member comment");

@@ -16,9 +16,11 @@ public class NotificationServiceClient {
     private final RestClient restClient;
     private final String internalToken;
 
+    // Legacy Group Service: its only call site is the frozen POST /api/groups/** path, so this
+    // client becomes irrelevant once Group is retired. Retargeted to Auth for consistency.
     public NotificationServiceClient(
-            @Value("${hishob.notification-service.base-url:http://localhost:8086}") String baseUrl,
-            @Value("${hishob.notification-service.internal-token:test-token}") String internalToken) {
+            @Value("${hishob.auth-service.base-url:http://localhost:8081}") String baseUrl,
+            @Value("${hishob.internal.token}") String internalToken) {
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .build();

@@ -24,8 +24,8 @@ public class GroupServiceClient {
     // Spring constructor
     @Autowired
     public GroupServiceClient(
-            @Value("${hishob.group-service.base-url:http://localhost:8082}") String baseUrl,
-            @Value("${hishob.group-service.internal-token}") String internalToken) {
+            @Value("${hishob.expense-service.base-url:http://localhost:8083}") String baseUrl,
+            @Value("${hishob.expense-service.internal-token}") String internalToken) {
 
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)

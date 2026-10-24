@@ -2,7 +2,7 @@ package com.hishob.expense.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hishob.expense.client.AuthServiceClient;
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.client.NotificationServiceClient;
 import com.hishob.expense.dto.CreateExpenseCommentRequest;
 import com.hishob.expense.dto.CreateNotificationRequest;
@@ -83,7 +83,7 @@ class ExpenseCommentControllerIntegrationTest {
     private JwtService jwtService;
 
     @MockitoBean
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @MockitoBean
     private AuthServiceClient authServiceClient;
@@ -93,7 +93,7 @@ class ExpenseCommentControllerIntegrationTest {
 
     private MockMvc mockMvc;
 
-    private static final String TEST_SECRET = "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+    private static final String TEST_SECRET = "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
     private static final long TEST_EXPIRATION = 3600000L;
 
     private UUID ownerId;
@@ -134,9 +134,9 @@ class ExpenseCommentControllerIntegrationTest {
     }
 
     private void stubGroupMembers(UUID groupId) {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(eq(groupId), eq(ownerId), anyString());
-        doNothing().when(groupServiceClient).validateMember(eq(groupId), eq(memberId), anyString());
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(eq(groupId), eq(ownerId), anyString());
+        doNothing().when(groupService).validateMember(eq(groupId), eq(memberId), anyString());
     }
 
     private Expense createGroupExpense() {
@@ -240,9 +240,9 @@ class ExpenseCommentControllerIntegrationTest {
     void testAccessGroupComments_NonMember_Forbidden() throws Exception {
         Expense expense = createGroupExpense();
 
-        doNothing().when(groupServiceClient).validateGroupExists(testGroupId);
+        doNothing().when(groupService).validateGroupExists(testGroupId);
         doThrow(new PermissionDeniedException("Caller is not a member of this group"))
-                .when(groupServiceClient).validateMember(eq(testGroupId), eq(nonMemberId), anyString());
+                .when(groupService).validateMember(eq(testGroupId), eq(nonMemberId), anyString());
 
         String token = jwt(nonMemberId, "stranger@test.com");
 
@@ -334,7 +334,7 @@ class ExpenseCommentControllerIntegrationTest {
     void testDeleteComment_UnrelatedUser_Forbidden() throws Exception {
         stubGroupMembers(testGroupId);
         UUID otherMemberId = UUID.randomUUID();
-        doNothing().when(groupServiceClient).validateMember(eq(testGroupId), eq(otherMemberId), anyString());
+        doNothing().when(groupService).validateMember(eq(testGroupId), eq(otherMemberId), anyString());
 
         Expense expense = createGroupExpense();
 

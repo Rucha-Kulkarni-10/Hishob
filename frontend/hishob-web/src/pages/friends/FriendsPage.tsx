@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AddFriendModal from '@/components/friends/AddFriendModal';
 import FriendRequests from '@/components/friends/FriendRequests';
 import FriendsList from '@/components/friends/FriendsList';
@@ -14,10 +14,19 @@ import {
   rejectFriendRequest,
   removeFriend,
 } from '@/services/friendService';
+import { getDashboardOverview } from '@/services/expenseService';
+import type { DashboardOverviewResponse } from '@/types/dashboard';
 import type { Friend, FriendRequest } from '@/types/friends';
 import { getErrorMessage } from '@/utils/errorUtils';
 
 type FriendsTab = 'friends' | 'requests';
+
+function formatAmount(amount: number): string {
+  return Math.abs(amount).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 export default function FriendsPage() {
   const location = useLocation();
@@ -29,6 +38,9 @@ export default function FriendsPage() {
   const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [overview, setOverview] = useState<DashboardOverviewResponse | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
   const [notice, setNotice] = useState(initialRouteMessage);
   const [addOpen, setAddOpen] = useState(false);
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
@@ -37,20 +49,42 @@ export default function FriendsPage() {
   const reload = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    try {
-      const [friendsData, incomingData, outgoingData] = await Promise.all([
-        getFriends(),
-        getIncomingRequests(),
-        getOutgoingRequests(),
-      ]);
-      setFriends(friendsData);
-      setIncoming(incomingData);
-      setOutgoing(outgoingData);
-    } catch (err: unknown) {
-      setError(getErrorMessage(err));
-    } finally {
-      setIsLoading(false);
+    setOverviewLoading(true);
+    const [friendsRes, incomingRes, outgoingRes, overviewRes] = await Promise.allSettled([
+      getFriends(),
+      getIncomingRequests(),
+      getOutgoingRequests(),
+      getDashboardOverview(),
+    ]);
+
+    if (friendsRes.status === 'fulfilled') {
+      setFriends(friendsRes.value);
+    } else {
+      setError(getErrorMessage(friendsRes.reason));
     }
+    if (incomingRes.status === 'fulfilled') {
+      setIncoming(incomingRes.value);
+    } else {
+      setError(getErrorMessage(incomingRes.reason));
+    }
+    if (outgoingRes.status === 'fulfilled') {
+      setOutgoing(outgoingRes.value);
+    } else {
+      setError(getErrorMessage(outgoingRes.reason));
+    }
+
+    // The overall total is the disjoint group + individual sum from /api/expenses/overview.
+    // Recorded spend only — shares, payments and balances are separate metrics.
+    if (overviewRes.status === 'fulfilled') {
+      setOverview(overviewRes.value);
+      setOverviewError(null);
+    } else {
+      setOverview(null);
+      setOverviewError(getErrorMessage(overviewRes.reason));
+    }
+
+    setIsLoading(false);
+    setOverviewLoading(false);
   }, []);
 
   useEffect(() => {
@@ -152,6 +186,40 @@ export default function FriendsPage() {
           + Add Friend
         </button>
       </header>
+
+      <section className="friends-summary" style={{ gridTemplateColumns: '1fr' }} aria-label="Overall expense total">
+        <article className="friends-summary__card">
+          <span className="friends-summary__label">Total Recorded Expenses</span>
+          <strong className="friends-summary__value">
+            {overviewLoading ? '…' : overview ? `₹${formatAmount(overview.combined.recordedSpend)}` : '—'}
+          </strong>
+          <span className="friends-summary__label" style={{ marginTop: 'var(--space-2)', marginBottom: 0 }}>
+            {overviewLoading
+              ? 'Loading your expenses…'
+              : overview
+                ? `${overview.combined.expenseCount} expenses recorded — group and 1-on-1, each counted once`
+                : 'Group and individual totals are unavailable right now'}
+          </span>
+          <div>
+            <Link to="/expense-overview" className="btn btn--secondary btn--sm" style={{ marginTop: 'var(--space-3)' }}>
+              View Details
+            </Link>
+          </div>
+        </article>
+      </section>
+
+      {overviewError && !overviewLoading && (
+        <div className="alert alert--error friends-page__alert" role="alert">
+          <span>Could not load the overall expense total: {overviewError}</span>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => void reload()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       <section className="friends-summary" aria-label="Friends summary">
         <article className="friends-summary__card">

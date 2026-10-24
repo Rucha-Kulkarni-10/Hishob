@@ -18,13 +18,13 @@ npm run dev
 
 Application starts at: **http://localhost:5173**
 
-All API requests are proxied through the HISHOB API Gateway at **http://localhost:8080**.
+All API requests are proxied through the HISHOB API Gateway at **http://localhost:8087**.
 
 ## Environment Variables
 
 | Variable | Description | Default |
 |---|---|---|
-| `VITE_API_BASE_URL` | HISHOB API Gateway URL | `http://localhost:8080` |
+| `VITE_API_BASE_URL` | HISHOB API Gateway URL | `http://localhost:8087` |
 
 **Important:** `VITE_*` variables are bundled into the browser build. Never put secrets, JWT keys, database passwords, or internal service tokens into environment variables.
 
@@ -43,7 +43,7 @@ Start these services before using the frontend:
 
 1. Eureka Discovery Server → :8761
 2. Config Server → :8888
-3. API Gateway → :8080 (**the only backend port the frontend calls**)
+3. API Gateway → :8087 (**the only backend port the frontend calls**)
 4. Auth Service → :8081
 
 ## Architecture
@@ -53,7 +53,7 @@ Browser
   ↓
 React Frontend (localhost:5173)
   ↓
-API Gateway (localhost:8080)
+API Gateway (localhost:8087)
   ↓
 Microservices (8081–8085)
 ```

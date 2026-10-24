@@ -61,7 +61,7 @@ class BalanceControllerIntegrationTest {
     private MockMvc mockMvc;
 
     private static final String TEST_SECRET =
-            "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
+            "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
 
     private UUID groupId;
     private UUID userA;
@@ -443,6 +443,41 @@ class BalanceControllerIntegrationTest {
         mockMvc.perform(get("/api/friends/" + userB + "/balance")
                         .header("Authorization", "Bearer " + jwt(userA)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Internal friend balance: valid internal token succeeds")
+    void getFriendBalanceInternal_validToken_success() throws Exception {
+        doNothing().when(authServiceClient).validateAcceptedFriendship(userA, userB);
+        when(expenseServiceClient.getPersonalExpensesForUser(userA))
+                .thenReturn(List.of(personalExpense(userB, "600.00",
+                        split(userA, "300.00"), split(userB, "300.00"))));
+
+        mockMvc.perform(get("/internal/personal-balances/users/" + userA + "/friends/" + userB)
+                        .header("X-Internal-Token", "hishob-test-internal-token-for-automated-tests-only"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentUserId", is(userA.toString())))
+                .andExpect(jsonPath("$.friendUserId", is(userB.toString())))
+                .andExpect(jsonPath("$.currentUserNetBalance", closeTo(-300.0, 0.001)))
+                .andExpect(jsonPath("$.friendNetBalance", closeTo(300.0, 0.001)))
+                .andExpect(jsonPath("$.fromUserId", is(userA.toString())))
+                .andExpect(jsonPath("$.toUserId", is(userB.toString())))
+                .andExpect(jsonPath("$.amount", closeTo(300.0, 0.001)));
+    }
+
+    @Test
+    @DisplayName("Internal friend balance: missing internal token returns 401")
+    void getFriendBalanceInternal_missingToken_unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/personal-balances/users/" + userA + "/friends/" + userB))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Internal friend balance: wrong internal token returns 401")
+    void getFriendBalanceInternal_wrongToken_unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/personal-balances/users/" + userA + "/friends/" + userB)
+                        .header("X-Internal-Token", "wrong-internal-token"))
+                .andExpect(status().isUnauthorized());
     }
 
 }

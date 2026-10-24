@@ -12,7 +12,14 @@
 
 export type BalanceStatus = 'GETS' | 'OWES' | 'SETTLED';
 
-/** Balance for a single person in personal context */
+/**
+ * One row of GET /api/personal-balances.
+ *
+ * For the requesting user these are graph-wide personal totals. For any other person they are
+ * the pairwise standing with the requesting user only — never that person's debts to third
+ * parties — so `netBalance` on a friend row is exactly the amount the backend accepts as a
+ * personal settlement with that friend.
+ */
 export interface PersonalBalanceResponse {
   userId: string;        // UUID
   totalPaid: number;

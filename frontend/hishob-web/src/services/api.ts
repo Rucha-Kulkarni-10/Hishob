@@ -3,7 +3,9 @@
  *
  * All HTTP requests to the HISHOB backend go through this instance.
  * The base URL is read from the VITE_API_BASE_URL environment variable,
- * which must point to the API Gateway (default: http://localhost:8080).
+ * which must point to the API Gateway (local dev default: http://localhost:8080,
+ * start-hishob.ps1 runs the Gateway on http://localhost:8087; production sets
+ * VITE_API_BASE_URL to the public Gateway URL at build time).
  *
  * Interceptors:
  *   Request  — attaches the stored JWT as a Bearer token if present.
@@ -27,7 +29,7 @@ if (!apiBaseUrl) {
 }
 
 const api = axios.create({
-  baseURL: apiBaseUrl ?? 'http://localhost:8080',
+  baseURL: apiBaseUrl ?? 'http://localhost:8087',
   headers: {
     'Content-Type': 'application/json',
   },

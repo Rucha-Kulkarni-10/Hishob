@@ -26,7 +26,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     java.util.List<User> findAllByIdIn(java.util.Collection<UUID> ids);
 
-    @Query("SELECT u FROM User u WHERE (LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%'))) AND u.id != :excludeUserId ORDER BY u.name ASC")
+    /**
+     * B-10: {@code :query} arrives already escaped for {@code ESCAPE '!'} (see
+     * FriendshipService#escapeLikePattern), so user-typed {@code %}, {@code _} and {@code !} match
+     * literally instead of widening into a wildcard scan of the whole table. The caller-supplied
+     * '%' wildcards around it stay unescaped and keep substring search working.
+     */
+    @Query("SELECT u FROM User u WHERE (LOWER(u.name) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '!' OR LOWER(u.email) LIKE LOWER(CONCAT('%', :query, '%')) ESCAPE '!') AND u.id != :excludeUserId ORDER BY u.name ASC")
     java.util.List<User> searchUsers(
             @Param("query") String query,
             @Param("excludeUserId") UUID excludeUserId,

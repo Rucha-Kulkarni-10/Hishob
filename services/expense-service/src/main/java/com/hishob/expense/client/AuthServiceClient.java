@@ -1,20 +1,32 @@
 package com.hishob.expense.client;
 
+import com.hishob.expense.dto.UserSummaryData;
 import com.hishob.expense.exception.ExpenseNotFoundException;
+import com.hishob.expense.exception.InvalidTargetUserException;
 import com.hishob.expense.exception.PermissionDeniedException;
 import com.hishob.expense.exception.ServiceUnavailableException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 @Component
 public class AuthServiceClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthServiceClient.class);
     static final String INTERNAL_TOKEN_HEADER = "X-Internal-Token";
 
     private final RestClient restClient;
@@ -23,14 +35,14 @@ public class AuthServiceClient {
     @Autowired
     public AuthServiceClient(
             @Value("${hishob.auth-service.base-url:http://localhost:8081}") String baseUrl,
-            @Value("${hishob.auth-service.internal-token:${hishob.internal.token:dev-internal-token-hishob-service-2026}}") String internalToken) {
+            @Value("${hishob.auth-service.internal-token:${hishob.internal.token}}") String internalToken) {
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
                 .build();
         this.internalToken = internalToken;
     }
 
-    AuthServiceClient(RestClient restClient, String internalToken) {
+    public AuthServiceClient(RestClient restClient, String internalToken) {
         this.restClient = restClient;
         this.internalToken = internalToken;
     }
@@ -60,6 +72,66 @@ public class AuthServiceClient {
         } catch (Exception e) {
             throw new ServiceUnavailableException("Auth Service unavailable: cannot validate friendships");
         }
+    }
+
+    public void validateUserExists(UUID userId) {
+        try {
+            restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/api/auth/users/{userId}/exists")
+                            .build(userId))
+                    .header(INTERNAL_TOKEN_HEADER, internalToken)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (HttpClientErrorException.NotFound nf) {
+            throw new InvalidTargetUserException("Target user does not exist: " + userId);
+        } catch (HttpClientErrorException e) {
+            throw new InvalidTargetUserException("Unable to validate user: " + userId + " (status: " + e.getStatusCode() + ")");
+        } catch (Exception e) {
+            throw new InvalidTargetUserException("Unable to reach Auth Service for user validation: " + userId);
+        }
+    }
+
+    public List<UserSummaryData> getUsersBatch(Collection<UUID> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return List.of();
+        }
+
+        try {
+            String forwardAuthHeader = getIncomingAuthorizationHeader();
+
+            RestClient.RequestBodySpec requestSpec = restClient.post()
+                    .uri("/api/auth/users/batch")
+                    .header(INTERNAL_TOKEN_HEADER, internalToken)
+                    .contentType(MediaType.APPLICATION_JSON);
+
+            if (forwardAuthHeader != null && !forwardAuthHeader.isBlank()) {
+                requestSpec.header("Authorization", forwardAuthHeader);
+            }
+
+            List<UserSummaryData> result = requestSpec
+                    .body(new ArrayList<>(userIds))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<UserSummaryData>>() {});
+
+            return result != null ? result : List.of();
+        } catch (Exception e) {
+            log.warn("Failed to fetch user profiles in batch from Auth Service for {} user IDs: {}",
+                    userIds.size(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String getIncomingAuthorizationHeader() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                return request.getHeader("Authorization");
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private static class ValidateAcceptedFriendshipsRequest {

@@ -15,11 +15,21 @@ export interface AnalyticsQueryParams {
 }
 
 /**
+ * Group reports additionally honour the payer and split-type controls in the filter bar.
+ * The backend applies them to the KPI totals, member table, monthly trend, category breakdown
+ * and CSV export alike.
+ */
+export interface GroupAnalyticsQueryParams extends AnalyticsQueryParams {
+  payerId?: string;
+  splitType?: string;
+}
+
+/**
  * Fetch financial overview, member spending and monthly trends for a group.
  */
 export async function getGroupAnalytics(
   groupId: string,
-  params?: AnalyticsQueryParams
+  params?: GroupAnalyticsQueryParams
 ): Promise<GroupAnalyticsResponse> {
   const response = await api.get<GroupAnalyticsResponse>(
     `/api/groups/${groupId}/expenses/analytics`,
@@ -34,7 +44,7 @@ export async function getGroupAnalytics(
  */
 export async function exportGroupExpensesCsv(
   groupId: string,
-  params?: AnalyticsQueryParams
+  params?: GroupAnalyticsQueryParams
 ): Promise<Blob> {
   const response = await api.get(`/api/groups/${groupId}/expenses/export/csv`, {
     params,

@@ -37,4 +37,11 @@ public interface FriendshipRepository extends JpaRepository<Friendship, UUID> {
     @Query("SELECT f FROM Friendship f WHERE (f.userIdLow = :userId OR f.userIdHigh = :userId) AND f.status = :status ORDER BY f.createdAt DESC")
     List<Friendship> findAllByUserIdAndStatus(@Param("userId") UUID userId, @Param("status") FriendshipStatus status);
 
+    /**
+     * Order-agnostic variant of {@link #findByUserIdLowAndUserIdHigh}: the caller does not have to
+     * reproduce the low/high canonicalisation to ask whether a pair shares a given status.
+     */
+    @Query("SELECT COUNT(f) FROM Friendship f WHERE ((f.userIdLow = :firstUserId AND f.userIdHigh = :secondUserId) OR (f.userIdLow = :secondUserId AND f.userIdHigh = :firstUserId)) AND f.status = :status")
+    long countBetween(@Param("firstUserId") UUID firstUserId, @Param("secondUserId") UUID secondUserId, @Param("status") FriendshipStatus status);
+
 }

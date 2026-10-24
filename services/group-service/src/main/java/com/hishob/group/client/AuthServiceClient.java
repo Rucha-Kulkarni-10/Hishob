@@ -32,7 +32,7 @@ public class AuthServiceClient {
     @Autowired
     public AuthServiceClient(
             @Value("${hishob.auth-service.base-url:http://localhost:8081}") String authServiceBaseUrl,
-            @Value("${hishob.internal.token:dev-internal-token-hishob-service-2026}") String internalToken) {
+            @Value("${hishob.internal.token}") String internalToken) {
         this.restClient = RestClient.builder()
                 .baseUrl(authServiceBaseUrl)
                 .build();
@@ -50,6 +50,7 @@ public class AuthServiceClient {
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/auth/users/{userId}/exists")
                             .build(userId))
+                    .header(INTERNAL_TOKEN_HEADER, internalToken)
                     .retrieve()
                     .toBodilessEntity();
         } catch (HttpClientErrorException.NotFound nf) {

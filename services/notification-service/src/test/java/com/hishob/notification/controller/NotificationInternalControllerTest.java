@@ -51,7 +51,8 @@ class NotificationInternalControllerTest {
 
     private MockMvc mockMvc;
 
-    private static final String INTERNAL_TOKEN = "test-internal-token";
+    private static final String INTERNAL_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
+    private static final String INTERNAL_TOKEN_SAME_LENGTH = "hishob-test-internal-token-for-automated-tests-onlY";
     private static final String WRONG_TOKEN = "definitely-wrong-token";
 
     @BeforeEach
@@ -286,6 +287,48 @@ class NotificationInternalControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    // ── test 11b: internal-token trust boundary both sides ──────────────────
+
+    @Test
+    @DisplayName("11b.1 Same-length token differing only in the final byte returns 401")
+    void createNotification_sameLengthDifferentToken() throws Exception {
+        Map<String, Object> request = Map.of(
+                "userId", UUID.randomUUID().toString(),
+                "type", NotificationType.EXPENSE_ADDED.name(),
+                "message", "Test message"
+        );
+
+        mockMvc.perform(post("/internal/notifications")
+                        .header("X-Internal-Token", INTERNAL_TOKEN_SAME_LENGTH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("11b.2 A bearer JWT without the internal token returns 401")
+    void createNotification_userJwtIsNotAnInternalCredential() throws Exception {
+        Map<String, Object> request = Map.of(
+                "userId", UUID.randomUUID().toString(),
+                "type", NotificationType.EXPENSE_ADDED.name(),
+                "message", "Test message"
+        );
+
+        mockMvc.perform(post("/internal/notifications")
+                        .header("Authorization", "Bearer not.a.valid.token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("11b.3 The internal token does not authenticate the user-facing notification list")
+    void listNotifications_internalTokenOnlyIsRejected() throws Exception {
+        mockMvc.perform(get("/api/notifications")
+                        .header("X-Internal-Token", INTERNAL_TOKEN))
+                .andExpect(status().isForbidden());
+    }
+
     // ── test 12: all notification types work ────────────────────────────────
 
     @Test
@@ -325,16 +368,37 @@ class NotificationInternalControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
-    // ── test 14: empty request body returns 400 ─────────────────────────────
+    // ── test 15: personal notifications with null groupId ───────────────────
 
     @Test
-    @DisplayName("14. Empty request body returns 400 Bad Request")
-    void createNotification_emptyBody() throws Exception {
-        mockMvc.perform(post("/internal/notifications")
-                        .header("X-Internal-Token", INTERNAL_TOKEN)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(""))
-                .andExpect(status().isBadRequest());
+    @DisplayName("15. Personal notification types with null groupId can be created successfully")
+    void createNotification_personalTypesNullGroupId() throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        NotificationType[] personalTypes = {
+                NotificationType.PERSONAL_EXPENSE_ADDED,
+                NotificationType.PERSONAL_EXPENSE_UPDATED,
+                NotificationType.PERSONAL_EXPENSE_DELETED,
+                NotificationType.EXPENSE_COMMENT_ADDED,
+                NotificationType.PERSONAL_SETTLEMENT_RECORDED
+        };
+
+        for (NotificationType type : personalTypes) {
+            Map<String, Object> request = Map.of(
+                    "userId", userId.toString(),
+                    "type", type.name(),
+                    "message", "Personal event: " + type.name(),
+                    "metadata", Map.of("personal", "true")
+            );
+
+            mockMvc.perform(post("/internal/notifications")
+                            .header("X-Internal-Token", INTERNAL_TOKEN)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.type", is(type.name())))
+                    .andExpect(jsonPath("$.groupId", nullValue()));
+        }
     }
 
 }

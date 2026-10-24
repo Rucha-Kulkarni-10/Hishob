@@ -40,6 +40,12 @@ out/
 .env.*
 !.env.example
 
+# ---------- Local operator scratch (holds real machine credentials) ----------
+/.agents/
+/EXECUTION-CHECKLIST.md
+/phase1-initial-status.txt
+/create-service-env-files.ps1
+
 # ---------- Node.js / Frontend ----------
 node_modules/
 dist/
@@ -50,6 +56,12 @@ build/
 # ---------- Logs ----------
 logs/
 *.log
+
+# ---------- Database Backups ----------
+# pg_dump custom-format archives contain real user data — never commit
+backups/
+backups-*/
+*.backup
 
 # ---------- OS ----------
 .DS_Store

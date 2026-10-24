@@ -1,7 +1,9 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import FormField from '@/components/common/FormField';
+import BrandLogo from '@/components/common/BrandLogo';
 import { useAuth } from '@/hooks/useAuth';
+import { resendVerification } from '@/services/authService';
 import { getErrorMessage } from '@/utils/errorUtils';
 
 export default function RegisterPage() {
@@ -20,6 +22,22 @@ export default function RegisterPage() {
   }>({});
   const [apiError, setApiError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  // Email verification state
+  const [isVerificationRequired, setIsVerificationRequired] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resendStatus, setResendStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isResending, setIsResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Cooldown countdown timer
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   // ── Client-side validation ─────────────────────────────────────────────────
   // Rules mirror the backend RegisterRequest constraints:
@@ -71,10 +89,13 @@ export default function RegisterPage() {
 
     setIsLoading(true);
     try {
-      // POST /api/auth/register returns AuthResponse with JWT →
-      // AuthContext stores the token and updates user state immediately.
-      await register({ name: name.trim(), email: email.trim(), password });
-      navigate('/dashboard', { replace: true });
+      const response = await register({ name: name.trim(), email: email.trim(), password });
+      if (response.emailVerificationRequired) {
+        setRegisteredEmail(email.trim());
+        setIsVerificationRequired(true);
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
     } catch (err: unknown) {
       setApiError(getErrorMessage(err));
     } finally {
@@ -82,14 +103,136 @@ export default function RegisterPage() {
     }
   };
 
+  const handleResend = async () => {
+    if (isResending || cooldown > 0 || !registeredEmail) return;
+
+    setIsResending(true);
+    setResendStatus(null);
+    try {
+      const result = await resendVerification(registeredEmail);
+      setResendStatus({
+        type: 'success',
+        message: result.message || 'If an account with that email exists, a verification email has been sent.',
+      });
+      setCooldown(60);
+    } catch (err: unknown) {
+      setResendStatus({
+        type: 'error',
+        message: getErrorMessage(err),
+      });
+    } finally {
+      setIsResending(false);
+    }
+  };
+
+  if (isVerificationRequired) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card" style={{ textAlign: 'center' }}>
+          <div className="auth-card__brand">
+            <BrandLogo variant="full" size="xl" priority alt="HISHOB — Split, Track, Settle Together" />
+          </div>
+
+          <div
+            style={{
+              width: '4rem',
+              height: '4rem',
+              borderRadius: '50%',
+              backgroundColor: 'var(--color-primary-light)',
+              color: 'var(--color-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto var(--space-4)',
+            }}
+          >
+            <svg
+              width="32"
+              height="32"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <rect width="20" height="16" x="2" y="4" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
+          </div>
+
+          <h2 className="auth-card__heading" style={{ marginBottom: 'var(--space-2)' }}>
+            Check your email
+          </h2>
+
+          <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--font-size-sm)', marginBottom: 'var(--space-4)', lineHeight: 1.5 }}>
+            We've sent a verification link to{' '}
+            <strong style={{ color: 'var(--color-text)', wordBreak: 'break-all' }}>{registeredEmail}</strong>.
+            Please verify your email address to complete your registration and activate your account.
+          </p>
+
+          <p style={{ color: 'var(--color-text-light)', fontSize: 'var(--font-size-xs)', marginBottom: 'var(--space-6)' }}>
+            The verification link is valid for 24 hours.
+          </p>
+
+          {resendStatus && (
+            <div
+              className={`alert alert--${resendStatus.type === 'success' ? 'success' : 'error'}`}
+              role="alert"
+              style={{ textAlign: 'left', marginBottom: 'var(--space-4)' }}
+            >
+              {resendStatus.message}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <Link to="/login" className="btn btn--primary btn--full">
+              Proceed to Sign in
+            </Link>
+
+            <button
+              type="button"
+              onClick={handleResend}
+              className="btn btn--ghost btn--full"
+              disabled={isResending || cooldown > 0}
+              aria-busy={isResending}
+            >
+              {isResending
+                ? 'Sending verification link…'
+                : cooldown > 0
+                ? `Resend available in ${cooldown}s`
+                : 'Resend verification email'}
+            </button>
+          </div>
+
+          <p className="auth-card__footer" style={{ marginTop: 'var(--space-6)' }}>
+            Entered the wrong email?{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setIsVerificationRequired(false);
+                setPassword('');
+                setConfirmPassword('');
+                setResendStatus(null);
+              }}
+              className="link"
+              style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer' }}
+            >
+              Register with a different address
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-card">
         {/* Brand */}
         <div className="auth-card__brand">
-          <span className="auth-card__logo" aria-hidden="true">₹</span>
-          <h1 className="auth-card__title">HISHOB</h1>
-          <p className="auth-card__subtitle">Shared expenses, simplified.</p>
+          <BrandLogo variant="full" size="xl" priority alt="HISHOB — Split, Track, Settle Together" />
         </div>
 
         <h2 className="auth-card__heading">Create your account</h2>

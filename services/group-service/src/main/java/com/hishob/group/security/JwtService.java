@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -16,8 +17,23 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
-    @Value("${jwt.secret:default-secret-key-must-be-at-least-256-bits-long-for-hmac-sha256-safety}")
+    @Value("${jwt.secret}")
     private String secret;
+
+    @PostConstruct
+    void validateConfiguredSecret() {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("jwt.secret is not configured; set the JWT_SECRET environment variable for this service");
+        }
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("jwt.secret must be at least 32 bytes for HMAC-SHA256 signing");
+        }
+        String value = secret.toLowerCase();
+        if (value.contains("your-") || value.contains("replace-with") || value.contains("changeme")
+                || value.contains("change-me") || value.contains("placeholder") || value.contains("example-")) {
+            throw new IllegalStateException("jwt.secret still holds a template placeholder value");
+        }
+    }
 
     public UUID extractUserId(String token) {
         Claims claims = extractAllClaims(token);

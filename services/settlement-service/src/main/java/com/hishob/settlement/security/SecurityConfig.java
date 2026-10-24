@@ -28,8 +28,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/internal/**").authenticated()
+                        .requestMatchers("/health").permitAll()
+                        .requestMatchers(InternalAuthFilter.INTERNAL_MATCHER).hasAuthority(InternalAuthFilter.INTERNAL_SERVICE_AUTHORITY)
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(internalAuthFilter, UsernamePasswordAuthenticationFilter.class)

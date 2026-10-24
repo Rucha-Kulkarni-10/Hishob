@@ -1,12 +1,37 @@
 # ============================================================
 #  start-hishob.ps1  –  HISHOB Backend Startup
-#  Project root: D:\Projects\My projects\Hishob
-#  Run from: anywhere (uses absolute paths)
+#  Project root: derived from $PSScriptRoot
+#  Run from: anywhere (resolves repository root automatically)
+#
+#  Each service is launched as a hidden java.exe child process so the
+#  stack outlives this launcher, and every service writes an owned log
+#  file under logs\stack. Readiness is bounded and configurable; a
+#  failure names the service, shows a redacted log tail and stops only
+#  the processes this invocation started. java.exe comes from JAVA_HOME
+#  when set, because a java.exe found through PATH can be a stub whose
+#  child is the JVM that really owns the port.
+#
+#  Requires: scripts\hishob-startup-lib.ps1
 # ============================================================
+
+param(
+    # Per-service budget. Eureka cold-starts in roughly 80s while the machine is
+    # also building, so the default leaves headroom rather than failing the run.
+    [int]$StartupTimeoutSec = 240,
+    [int]$ProbeIntervalSec = 2,
+    [int]$HttpProbeTimeoutSec = 10,
+    [int]$SoakSec = 3,
+    [int]$ShutdownTimeoutSec = 30,
+    [string]$LogDirectory
+)
 
 $ErrorActionPreference = "Stop"
 
-$ROOT = "D:\Projects\My projects\Hishob"
+$ROOT = $PSScriptRoot
+. (Join-Path $ROOT "scripts\hishob-startup-lib.ps1")
+
+if ([string]::IsNullOrWhiteSpace($LogDirectory)) { $LogDirectory = Join-Path $ROOT "logs\stack" }
+$stateFile = Join-Path $LogDirectory "stack-state.json"
 
 # ── Helpers ──────────────────────────────────────────────────
 function Write-Step([string]$msg) {
@@ -22,187 +47,218 @@ function Write-Fail([string]$msg) {
     Write-Host "  [FAIL] $msg" -ForegroundColor Red
 }
 
-function Wait-Port {
-    param(
-        [string]$Name,
-        [int]$Port,
-        [int]$TimeoutSec = 120
-    )
-    Write-Host "  Waiting for $Name on :$Port ..." -ForegroundColor Yellow
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    while ((Get-Date) -lt $deadline) {
+# Stops only the JVMs this run started, in reverse dependency order, including
+# any child process of them (a java.exe stub runs the real JVM as its child).
+# Never sweeps by port or by process name, so an unrelated Java process is untouched.
+function Stop-StartedServices {
+    param([array]$Entries, [int]$TimeoutSec)
+
+    for ($i = $Entries.Count - 1; $i -ge 0; $i--) {
+        $entry = $Entries[$i]
+        $process = $entry.Process
+        if (-not $process) { continue }
+
+        $tree = @()
+        try { $tree = @((@(Get-HishobChildProcessId -ProcessId $entry.Pid) + @($entry.JvmPids) + @($entry.Pid)) | Select-Object -Unique) } catch { $tree = @($entry.Pid) }
+        [Array]::Reverse($tree)
+
+        # Deepest first, so the tracked parent is the last thing to go. Only JVMs
+        # are stopped here: the launcher owns java.exe, whatever else the service
+        # spawned belongs to the service.
+        foreach ($childPid in @($tree | Where-Object { $_ -gt 0 -and $_ -ne $entry.Pid })) {
+            try {
+                $child = Get-Process -Id $childPid -ErrorAction Stop
+                if ($child.HasExited) { continue }
+                if ($child.ProcessName -notmatch '^(java|javaw)$') { continue }
+                Write-Host "  Stopping $($entry.Label) child PID $childPid ($($child.ProcessName))..." -ForegroundColor Yellow
+                Stop-Process -Id $childPid -Force -ErrorAction Stop
+            } catch { }
+        }
+
         try {
-            $tcp = New-Object System.Net.Sockets.TcpClient
-            $tcp.Connect("127.0.0.1", $Port)
-            $tcp.Close()
-            Write-OK "$Name ready on :$Port"
-            return
-        } catch { }
-        Start-Sleep -Milliseconds 500
-    }
-    Write-Fail "$Name did not become ready on :$Port within ${TimeoutSec}s"
-    exit 1
-}
-
-function Wait-Http {
-    param(
-        [string]$Name,
-        [string]$Url,
-        [int]$TimeoutSec = 120
-    )
-    Write-Host "  Waiting for $Name at $Url ..." -ForegroundColor Yellow
-    $deadline = (Get-Date).AddSeconds($TimeoutSec)
-    while ((Get-Date) -lt $deadline) {
-        try {
-            $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 3 -ErrorAction SilentlyContinue
-            if ($resp -and $resp.StatusCode -lt 500) {
-                Write-OK "$Name responded HTTP $($resp.StatusCode)"
-                return
-            }
-        } catch { }
-        Start-Sleep -Milliseconds 1000
-    }
-    Write-Fail "$Name did not respond at $Url within ${TimeoutSec}s"
-    exit 1
-}
-
-# ── Launch helper – uses a temp .ps1 file per service ────────
-# This avoids all quoting/escaping issues with spaces in paths and $ROOT expansion.
-function Start-HishobService {
-    param(
-        [string]$Label,
-        [string]$JarPath
-    )
-    $tmpScript = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-    $content = @"
-`$env:DB_PASSWORD = 'Abc@1234'
-`$env:DB_USERNAME = 'postgres'
-`$env:DB_HOST     = 'localhost'
-`$env:DB_PORT     = '5432'
-Set-Location '$ROOT'
-Write-Host "Starting: $Label" -ForegroundColor Cyan
-java -jar "$JarPath"
-"@
-    Set-Content -Path $tmpScript -Value $content -Encoding UTF8
-    Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmpScript
-    Write-OK "Launched $Label window"
-}
-
-# ── JAR paths ────────────────────────────────────────────────
-$jarConfigServer    = "$ROOT\infrastructure\config-server\target\config-server-0.0.1-SNAPSHOT.jar"
-$jarDiscovery       = "$ROOT\infrastructure\discovery-server\target\discovery-server-0.0.1-SNAPSHOT.jar"
-$jarAuth            = "$ROOT\services\auth-service\target\auth-service-0.0.1-SNAPSHOT.jar"
-$jarGroup           = "$ROOT\services\group-service\target\group-service-0.0.1-SNAPSHOT.jar"
-$jarExpense         = "$ROOT\services\expense-service\target\expense-service-0.0.1-SNAPSHOT.jar"
-$jarBalance         = "$ROOT\services\balance-service\target\balance-service-0.0.1-SNAPSHOT.jar"
-$jarSettlement      = "$ROOT\services\settlement-service\target\settlement-service-0.0.1-SNAPSHOT.jar"
-$jarNotification    = "$ROOT\services\notification-service\target\notification-service-0.0.1-SNAPSHOT.jar"
-$jarGateway         = "$ROOT\gateway\api-gateway\target\api-gateway-0.0.1-SNAPSHOT.jar"
-
-$allJars = @{
-    "Config Server"        = $jarConfigServer
-    "Discovery Server"     = $jarDiscovery
-    "Auth Service"         = $jarAuth
-    "Group Service"        = $jarGroup
-    "Expense Service"      = $jarExpense
-    "Balance Service"      = $jarBalance
-    "Settlement Service"   = $jarSettlement
-    "Notification Service" = $jarNotification
-    "API Gateway"          = $jarGateway
-}
-
-# ── Validate JARs ────────────────────────────────────────────
-Write-Step "Validating JAR files..."
-$missing = @()
-foreach ($entry in $allJars.GetEnumerator()) {
-    if (-not (Test-Path $entry.Value)) {
-        $missing += $entry.Key
-        Write-Fail "Missing JAR for $($entry.Key)"
-        Write-Host "         Expected: $($entry.Value)" -ForegroundColor DarkRed
-    } else {
-        Write-OK "Found JAR: $($entry.Key)"
+            if ($process.HasExited) { continue }
+            Write-Host "  Stopping $($entry.Label) (PID $($process.Id))..." -ForegroundColor Yellow
+            Stop-Process -Id $process.Id -Force -ErrorAction Stop
+            $null = $process.WaitForExit($TimeoutSec * 1000)
+        } catch {
+            Write-Host "  Could not stop $($entry.Label) (PID $($process.Id)): $($_.Exception.Message)" -ForegroundColor Yellow
+        }
     }
 }
-if ($missing.Count -gt 0) {
-    Write-Host ""
-    Write-Host "  Build missing services first:" -ForegroundColor Red
-    Write-Host "    cd `"$ROOT`"" -ForegroundColor Yellow
-    Write-Host "    .\mvnw.cmd package -DskipTests" -ForegroundColor Yellow
-    exit 1
+
+# ── Dependency order: Config -> Eureka -> Auth -> Expense -> Settlement -> Gateway
+# EnvDir is the services\<name>\.env holding that service's configuration; the
+# infrastructure jars and the gateway take no credential file.
+$stack = @(
+    [pscustomobject]@{ Label = "Config Server"; Key = "config-server"; Port = 8888; EnvDir = $null; ProbeUrl = $null; Jar = "$ROOT\infrastructure\config-server\target\config-server-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{} },
+    [pscustomobject]@{ Label = "Discovery Server (Eureka)"; Key = "discovery-server"; Port = 8761; EnvDir = $null; ProbeUrl = "http://localhost:8761/"; Jar = "$ROOT\infrastructure\discovery-server\target\discovery-server-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{} },
+    [pscustomobject]@{ Label = "Auth Service"; Key = "auth-service"; Port = 8081; EnvDir = "auth-service"; ProbeUrl = $null; Jar = "$ROOT\services\auth-service\target\auth-service-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{} },
+    [pscustomobject]@{ Label = "Expense Service"; Key = "expense-service"; Port = 8083; EnvDir = "expense-service"; ProbeUrl = $null; Jar = "$ROOT\services\expense-service\target\expense-service-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{} },
+    [pscustomobject]@{ Label = "Settlement Service"; Key = "settlement-service"; Port = 8085; EnvDir = "settlement-service"; ProbeUrl = $null; Jar = "$ROOT\services\settlement-service\target\settlement-service-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{} },
+    [pscustomobject]@{ Label = "API Gateway"; Key = "api-gateway"; Port = 8087; EnvDir = $null; ProbeUrl = $null; Jar = "$ROOT\gateway\api-gateway\target\api-gateway-0.0.1-SNAPSHOT.jar"; ServiceEnv = @{ PORT = "8087" } }
+)
+
+# Names each service must have before its JVM is allowed to start. The service
+# ymls carry no credential fallbacks, so a missing variable would otherwise fail
+# deep inside the JVM.
+$serviceRequirements = [ordered]@{
+    "auth-service"       = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
+    "expense-service"    = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_SCHEMA", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
+    "settlement-service" = @("DB_HOST", "DB_PORT", "DB_NAME", "DB_SCHEMA", "DB_USERNAME", "DB_PASSWORD", "JWT_SECRET", "INTERNAL_SERVICE_TOKEN")
 }
+
+$jarPhrases = @($stack | ForEach-Object { $_.Key })
 
 # ── Banner ───────────────────────────────────────────────────
 Write-Host ""
 Write-Host "  HISHOB Backend Startup" -ForegroundColor Magenta
 Write-Host "  ======================" -ForegroundColor Magenta
-Write-Host ""
 
-# ════════════════════════════════════════════════════════════
-# [1/9] Config Server — MUST run from $ROOT so the native
-#       file: search-location (./infrastructure/config-server/config/)
-#       resolves correctly.
-# ════════════════════════════════════════════════════════════
-Write-Step "[1/9] Starting Config Server :8888"
-$tmp1 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-Set-Content -Path $tmp1 -Value @"
-Set-Location '$ROOT'
-Write-Host 'Starting Config Server...' -ForegroundColor Cyan
-java -jar '$jarConfigServer'
-"@ -Encoding UTF8
-Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp1
-Wait-Port -Name "Config Server" -Port 8888 -TimeoutSec 120
+# ── Pre-flight: everything is checked before any JVM starts ──
+Write-Step "Pre-flight: java, JARs, environment files, ports..."
+$problems = @()
 
-# ── [2/9] Discovery Server (Eureka) ─────────────────────────
-Write-Step "[2/9] Starting Discovery Server (Eureka) :8761"
-$tmp2 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-Set-Content -Path $tmp2 -Value @"
-Set-Location '$ROOT'
-Write-Host 'Starting Discovery Server...' -ForegroundColor Cyan
-java -jar '$jarDiscovery'
-"@ -Encoding UTF8
-Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp2
-Wait-Http -Name "Eureka" -Url "http://localhost:8761/" -TimeoutSec 120
+$javaPath = Resolve-HishobJavaExe
+if (-not $javaPath) {
+    $problems += "java.exe was not found through JAVA_HOME or PATH; install or expose the JDK before starting the stack"
+    $javaExe = $null
+} else {
+    $javaExe = $javaPath
+    Write-OK "Using java.exe from $javaExe"
+}
 
-# ── [3/9] Auth Service ───────────────────────────────────────
-Write-Step "[3/9] Starting Auth Service :8081"
-Start-HishobService -Label "Auth Service" -JarPath $jarAuth
-Wait-Port -Name "Auth Service" -Port 8081 -TimeoutSec 120
+foreach ($service in $stack) {
+    if (Test-Path -LiteralPath $service.Jar) {
+        Write-OK "Found JAR: $($service.Label)"
+    } else {
+        $problems += "$($service.Label) : no jar at $($service.Jar)"
+    }
+}
 
-# ── [4/9] Group Service ──────────────────────────────────────
-Write-Step "[4/9] Starting Group Service :8082"
-Start-HishobService -Label "Group Service" -JarPath $jarGroup
-Wait-Port -Name "Group Service" -Port 8082 -TimeoutSec 120
+$redactSecrets = @()
+foreach ($service in $stack) {
+    if (-not $service.EnvDir) { continue }
+    $envFile = "$ROOT\services\$($service.EnvDir)\.env"
+    $values = Read-HishobEnvFile -Path $envFile
+    $problems += @(Find-HishobEnvProblem -ServiceName $service.EnvDir -Values $values -RequiredNames $serviceRequirements[$service.EnvDir])
+    if ($values) {
+        $service.ServiceEnv = $values
+        $redactSecrets += @(Get-HishobSecretValue -EnvValues $values)
+    }
+}
+if ($problems.Count -eq 0) {
+    Write-OK "Environment ready for: $($serviceRequirements.Keys -join ', ')"
+}
 
-# ── [5/9] Expense Service ────────────────────────────────────
-Write-Step "[5/9] Starting Expense Service :8083"
-Start-HishobService -Label "Expense Service" -JarPath $jarExpense
-Wait-Port -Name "Expense Service" -Port 8083 -TimeoutSec 120
+# A port already in use means something is already running here. Report it and
+# stop, rather than starting a second stack or killing what is there.
+$occupied = @()
+$netstat = @(netstat -ano)
+foreach ($service in $stack) {
+    $pids = @(Get-HishobListeningPid -NetstatOutput $netstat -Port $service.Port)
+    if ($pids.Count -gt 0) {
+        $ownership = foreach ($ownerPid in $pids) {
+            if (Test-HishobOwnedJava -ProcessId $ownerPid -RootPath $ROOT -JarPhrases $jarPhrases) { "HISHOB-owned" } else { "not HISHOB-owned" }
+        }
+        $occupied += "$($service.Label) : port $($service.Port) is already listening (PID $($pids -join ', '); $($ownership -join ', '))"
+    }
+}
+$problems += $occupied
 
-# ── [6/9] Balance Service ────────────────────────────────────
-Write-Step "[6/9] Starting Balance Service :8084"
-Start-HishobService -Label "Balance Service" -JarPath $jarBalance
-Wait-Port -Name "Balance Service" -Port 8084 -TimeoutSec 120
+if ($problems.Count -gt 0) {
+    foreach ($problem in $problems) { Write-Fail $problem }
+    Write-Host "         Only variable names are printed, never values." -ForegroundColor DarkGray
+    Write-Host "         Copy services\<service>\.env.example and fill in every required entry." -ForegroundColor Yellow
+    if ($occupied.Count -gt 0) {
+        Write-Host "         Nothing was started. Free those ports (for example .\stop-hishob.ps1) and run this again." -ForegroundColor Yellow
+    }
+    exit 1
+}
 
-# ── [7/9] Settlement Service ─────────────────────────────────
-Write-Step "[7/9] Starting Settlement Service :8085"
-Start-HishobService -Label "Settlement Service" -JarPath $jarSettlement
-Wait-Port -Name "Settlement Service" -Port 8085 -TimeoutSec 120
+New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
+Write-OK "Logging to $LogDirectory"
 
-# ── [8/9] Notification Service ───────────────────────────────
-Write-Step "[8/9] Starting Notification Service :8086"
-Start-HishobService -Label "Notification Service" -JarPath $jarNotification
-Wait-Port -Name "Notification Service" -Port 8086 -TimeoutSec 120
+# ── Start, wait, and verify one service at a time ────────────
+$started = @()
+$number = 0
+foreach ($service in $stack) {
+    $number++
+    Write-Step "[$number/$($stack.Count)] Starting $($service.Label) :$($service.Port)"
 
-# ── [9/9] API Gateway ────────────────────────────────────────
-Write-Step "[9/9] Starting API Gateway :8080"
-$tmp9 = [System.IO.Path]::GetTempFileName() -replace '\.tmp$', '.ps1'
-Set-Content -Path $tmp9 -Value @"
-Set-Location '$ROOT'
-Write-Host 'Starting API Gateway...' -ForegroundColor Cyan
-java -jar '$jarGateway'
-"@ -Encoding UTF8
-Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $tmp9
-Wait-Port -Name "API Gateway" -Port 8080 -TimeoutSec 120
+    # The JVM inherits this launcher's process environment, so load this
+    # service's variables, launch, then remove them again - otherwise the next
+    # service would be started with the previous service's database name.
+    foreach ($name in @($service.ServiceEnv.Keys)) {
+        [Environment]::SetEnvironmentVariable([string]$name, [string]$service.ServiceEnv[[string]$name], "Process")
+    }
+
+    $stdoutLog = Join-Path $LogDirectory "$($service.Key).out.log"
+    $stderrLog = Join-Path $LogDirectory "$($service.Key).err.log"
+
+    $process = $null
+    try {
+        $process = Start-Process -FilePath $javaExe `
+            -ArgumentList @("-jar", "`"$($service.Jar)`"") `
+            -WorkingDirectory $ROOT `
+            -WindowStyle Hidden `
+            -RedirectStandardOutput $stdoutLog `
+            -RedirectStandardError $stderrLog `
+            -PassThru
+        Write-OK "Launched $($service.Label) as PID $($process.Id)"
+    } catch {
+        Write-Fail "Could not launch $($service.Label): $($_.Exception.Message)"
+    } finally {
+        # Remove every name this service put into the launcher's environment.
+        foreach ($name in @($service.ServiceEnv.Keys)) { [Environment]::SetEnvironmentVariable([string]$name, $null, "Process") }
+    }
+    if (-not $process) {
+        Stop-StartedServices -Entries $started -TimeoutSec $ShutdownTimeoutSec
+        Write-HishobStackState -Path $stateFile -RootPath $ROOT -Entries @()
+        Write-Fail "$($service.Label) did not start; removed the $($started.Count) service(s) started by this run."
+        exit 1
+    }
+
+    $entry = [pscustomobject]@{
+        Label   = $service.Label
+        Key     = $service.Key
+        Port    = $service.Port
+        Pid     = $process.Id
+        Jar     = $service.Jar
+        Stdout  = $stdoutLog
+        Stderr  = $stderrLog
+        JvmPids = @()
+        Process = $process
+    }
+    $started += $entry
+
+    $ready = Wait-HishobService -Name $service.Label -Port $service.Port -Process $process `
+        -ProbeUrl $service.ProbeUrl -TimeoutSec $StartupTimeoutSec -IntervalSec $ProbeIntervalSec `
+        -HttpTimeoutSec $HttpProbeTimeoutSec -SoakSec $SoakSec
+
+    if ($ready.Result -ne "Ready") {
+        Write-Fail "$($service.Label) is not ready on :$($service.Port) ($($ready.Result) after $($ready.Seconds)s): $($ready.Detail)"
+        Write-Host (Get-HishobLogTail -Paths @($stdoutLog, $stderrLog) -Lines 25 -Secrets $redactSecrets) -ForegroundColor DarkGray
+        Stop-StartedServices -Entries $started -TimeoutSec $ShutdownTimeoutSec
+        Write-HishobStackState -Path $stateFile -RootPath $ROOT -Entries @()
+        Write-Host "         Services started by this run were stopped. Nothing else was touched." -ForegroundColor Yellow
+        Write-Host "         Logs kept for inspection: $stdoutLog" -ForegroundColor Yellow
+        exit 1
+    }
+
+    Write-OK "$($service.Label) ready on :$($service.Port) in $($ready.Seconds)s$(if ($ready.StatusCode) { " (HTTP $($ready.StatusCode))" })"
+
+    # Record which PIDs actually own the port. When java.exe is a stub in front of
+    # the real JVM these differ, and an operator (and stop-hishob.ps1) needs the
+    # JVM, not the parent. Descendants are deliberately not recorded: they are
+    # transient at startup, and a stale PID could later be recycled onto a process
+    # this stack does not own. Cleanup scans the tree live instead.
+    $entry.JvmPids = @(Get-HishobListeningPid -NetstatOutput @(netstat -ano) -Port $service.Port)
+
+    # Record progress so an interrupted run still leaves PIDs a stop script can use.
+    Write-HishobStackState -Path $stateFile -RootPath $ROOT -Entries @($started | ForEach-Object {
+        [pscustomobject]@{ label = $_.Label; key = $_.Key; port = $_.Port; pid = $_.Pid; javaPids = @($_.JvmPids); jar = $_.Jar; stdout = $_.Stdout; stderr = $_.Stderr }
+    })
+}
 
 # ── Summary ──────────────────────────────────────────────────
 Write-Host ""
@@ -210,15 +266,27 @@ Write-Host "  ============================================" -ForegroundColor Gre
 Write-Host "       HISHOB BACKEND IS FULLY RUNNING        " -ForegroundColor Green
 Write-Host "  ============================================" -ForegroundColor Green
 Write-Host ""
+Write-Host "  Consolidated 3-domain architecture:" -ForegroundColor Cyan
+Write-Host "    * Auth Service (authentication, users, friendships, notifications)" -ForegroundColor DarkGray
+Write-Host "    * Expense Service (groups, expenses, analytics)" -ForegroundColor DarkGray
+Write-Host "    * Settlement Service (balances, settlements)" -ForegroundColor DarkGray
+Write-Host ""
+foreach ($entry in $started) {
+    $jvmPids = @($entry.JvmPids)
+    $jvmNote = ""
+    if ($jvmPids.Count -gt 0 -and -not ($jvmPids.Count -eq 1 -and $jvmPids[0] -eq $entry.Pid)) {
+        $jvmNote = "  (jvm PID $($jvmPids -join ', '))"
+    }
+    Write-Host ("  {0,-26} :{1,-5} PID {2}{3}" -f $entry.Label, $entry.Port, $entry.Pid, $jvmNote) -ForegroundColor White
+}
+Write-Host ""
 Write-Host "  Config Server    : http://localhost:8888" -ForegroundColor White
 Write-Host "  Eureka           : http://localhost:8761" -ForegroundColor White
-Write-Host "  API Gateway      : http://localhost:8080" -ForegroundColor White
-Write-Host "  Auth Service     : http://localhost:8081" -ForegroundColor White
-Write-Host "  Group Service    : http://localhost:8082" -ForegroundColor White
-Write-Host "  Expense Service  : http://localhost:8083" -ForegroundColor White
-Write-Host "  Balance Service  : http://localhost:8084" -ForegroundColor White
-Write-Host "  Settlement Svc   : http://localhost:8085" -ForegroundColor White
-Write-Host "  Notification Svc : http://localhost:8086" -ForegroundColor White
+Write-Host "  API Gateway      : http://localhost:8087" -ForegroundColor White
+Write-Host ""
+Write-Host "  These JVMs are independent of this window; it can close now." -ForegroundColor DarkGray
+Write-Host "  Logs (secrets never written to them): $LogDirectory" -ForegroundColor DarkGray
+Write-Host "  PIDs + ports: $stateFile" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  Stop all services: .\stop-hishob.ps1" -ForegroundColor DarkGray
 Write-Host ""

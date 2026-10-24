@@ -15,13 +15,37 @@ export interface User {
   name: string;
   email: string;
   createdAt: string;   // ISO-8601 Instant
+  emailVerified?: boolean;
 }
 
 /** POST /api/auth/register  and  POST /api/auth/login response. */
 export interface AuthResponse {
-  accessToken: string;
-  tokenType: string;   // always "Bearer"
-  user: User;
+  accessToken?: string | null;
+  tokenType?: string | null;   // e.g. "Bearer"
+  user?: User;
+  emailVerificationRequired?: boolean;
+  message?: string;
+}
+
+/** POST /api/auth/verify-email request body. */
+export interface VerifyEmailRequest {
+  token: string;
+}
+
+/** POST /api/auth/verify-email response. */
+export interface VerifyEmailResponse {
+  verified: boolean;
+  message: string;
+}
+
+/** POST /api/auth/resend-verification request body. */
+export interface ResendVerificationRequest {
+  email: string;
+}
+
+/** POST /api/auth/resend-verification response. */
+export interface ResendVerificationResponse {
+  message: string;
 }
 
 /** POST /api/auth/register request body. */

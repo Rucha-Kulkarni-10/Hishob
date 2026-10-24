@@ -139,7 +139,6 @@ export default function AddFriendModal({
                 <h4 className="friend-search-result__name">
                   {displayName(user.name)}
                 </h4>
-                <p className="friend-search-result__email">{user.email}</p>
               </div>
               <button
                 type="button"

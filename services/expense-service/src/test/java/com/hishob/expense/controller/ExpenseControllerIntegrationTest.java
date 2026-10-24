@@ -2,7 +2,7 @@ package com.hishob.expense.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hishob.expense.client.AuthServiceClient;
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.dto.CreateExpenseRequest;
 import com.hishob.expense.dto.ExpenseSplitRequest;
 import com.hishob.expense.entity.Expense;
@@ -70,15 +70,15 @@ class ExpenseControllerIntegrationTest {
     private JwtService jwtService;
 
     @MockitoBean
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @MockitoBean
     private AuthServiceClient authServiceClient;
 
     private MockMvc mockMvc;
 
-    private static final String TEST_SECRET = "d3f4u1t-s3cr3t-k3y-f0r-h1sh0b-auth-s3rv1c3-jwt-t0k3n-g3n3r4t10n-2026";
-    private static final String INTERNAL_TOKEN = "test-internal-token";
+    private static final String TEST_SECRET = "hishob-test-jwt-secret-for-automated-tests-only-0123456789abcdef";
+    private static final String INTERNAL_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
     private static final long TEST_EXPIRATION = 3600000L;
 
     private UUID ownerId;
@@ -118,14 +118,14 @@ class ExpenseControllerIntegrationTest {
     }
 
     private void asMember(UUID groupId, UUID userId) {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(eq(groupId), eq(userId), anyString());
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(eq(groupId), eq(userId), anyString());
     }
 
     private void stubAllTwoMembers(UUID groupId) {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(eq(groupId), eq(ownerId), anyString());
-        doNothing().when(groupServiceClient).validateMember(eq(groupId), eq(memberId), anyString());
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(eq(groupId), eq(ownerId), anyString());
+        doNothing().when(groupService).validateMember(eq(groupId), eq(memberId), anyString());
     }
 
     private Expense createPersistedExpense(UUID groupId, UUID createdBy, UUID paidBy,
@@ -358,10 +358,10 @@ class ExpenseControllerIntegrationTest {
     @Test
     @DisplayName("POST /api/expenses — payer not in group => 403")
     void testCreateExpense_PayerNotInGroup() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(testGroupId);
-        doNothing().when(groupServiceClient).validateMember(eq(testGroupId), eq(ownerId), anyString());
+        doNothing().when(groupService).validateGroupExists(testGroupId);
+        doNothing().when(groupService).validateMember(eq(testGroupId), eq(ownerId), anyString());
         doThrow(new PermissionDeniedException("Payer is not a member of this group"))
-                .when(groupServiceClient).validateMember(eq(testGroupId), eq(nonMemberId), eq("Payer"));
+                .when(groupService).validateMember(eq(testGroupId), eq(nonMemberId), eq("Payer"));
 
         String token = jwt(ownerId, "owner@test.com");
 
@@ -383,10 +383,10 @@ class ExpenseControllerIntegrationTest {
     @Test
     @DisplayName("POST /api/expenses — participant not in group => 403")
     void testCreateExpense_ParticipantNotInGroup() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(testGroupId);
-        doNothing().when(groupServiceClient).validateMember(eq(testGroupId), eq(ownerId), anyString());
+        doNothing().when(groupService).validateGroupExists(testGroupId);
+        doNothing().when(groupService).validateMember(eq(testGroupId), eq(ownerId), anyString());
         doThrow(new PermissionDeniedException("Participant is not a member of this group"))
-                .when(groupServiceClient).validateMember(eq(testGroupId), eq(nonMemberId), eq("Participant"));
+                .when(groupService).validateMember(eq(testGroupId), eq(nonMemberId), eq("Participant"));
 
         String token = jwt(ownerId, "owner@test.com");
 
@@ -408,9 +408,9 @@ class ExpenseControllerIntegrationTest {
     @Test
     @DisplayName("POST /api/expenses — non-member caller => 403")
     void testCreateExpense_NonMemberCaller() throws Exception {
-        doNothing().when(groupServiceClient).validateGroupExists(testGroupId);
+        doNothing().when(groupService).validateGroupExists(testGroupId);
         doThrow(new PermissionDeniedException("Creator is not a member of this group"))
-                .when(groupServiceClient).validateMember(eq(testGroupId), eq(nonMemberId), eq("Creator"));
+                .when(groupService).validateMember(eq(testGroupId), eq(nonMemberId), eq("Creator"));
 
         String token = jwt(nonMemberId, "nonmember@test.com");
 
@@ -438,7 +438,7 @@ class ExpenseControllerIntegrationTest {
         Expense expense = createPersistedExpense(testGroupId, ownerId, ownerId, SplitType.EQUAL, splits);
 
         doThrow(new PermissionDeniedException("Caller is not a member of this group"))
-                .when(groupServiceClient).validateMember(eq(testGroupId), eq(nonMemberId), eq("Caller"));
+                .when(groupService).validateMember(eq(testGroupId), eq(nonMemberId), eq("Caller"));
 
         String nonMemberToken = jwt(nonMemberId, "nonmember@test.com");
 

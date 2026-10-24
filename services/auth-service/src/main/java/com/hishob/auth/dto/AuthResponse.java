@@ -5,6 +5,8 @@ public class AuthResponse {
     private String accessToken;
     private String tokenType;
     private UserResponse user;
+    private boolean emailVerificationRequired;
+    private String message;
 
     public AuthResponse() {
         this.tokenType = "Bearer";
@@ -12,14 +14,30 @@ public class AuthResponse {
 
     public AuthResponse(String accessToken, UserResponse user) {
         this.accessToken = accessToken;
-        this.tokenType = "Bearer";
+        this.tokenType = accessToken != null ? "Bearer" : null;
         this.user = user;
+        this.emailVerificationRequired = false;
     }
 
     public AuthResponse(String accessToken, String tokenType, UserResponse user) {
         this.accessToken = accessToken;
         this.tokenType = tokenType;
         this.user = user;
+        this.emailVerificationRequired = false;
+    }
+
+    public static AuthResponse authenticated(String accessToken, UserResponse user) {
+        return new AuthResponse(accessToken, "Bearer", user);
+    }
+
+    public static AuthResponse verificationRequired(UserResponse user, String message) {
+        AuthResponse response = new AuthResponse();
+        response.setAccessToken(null);
+        response.setTokenType(null);
+        response.setUser(user);
+        response.setEmailVerificationRequired(true);
+        response.setMessage(message);
+        return response;
     }
 
     public String getAccessToken() {
@@ -44,6 +62,22 @@ public class AuthResponse {
 
     public void setUser(UserResponse user) {
         this.user = user;
+    }
+
+    public boolean isEmailVerificationRequired() {
+        return emailVerificationRequired;
+    }
+
+    public void setEmailVerificationRequired(boolean emailVerificationRequired) {
+        this.emailVerificationRequired = emailVerificationRequired;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
     }
 
 }

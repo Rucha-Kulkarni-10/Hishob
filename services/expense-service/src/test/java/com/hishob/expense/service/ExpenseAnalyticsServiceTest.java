@@ -1,6 +1,6 @@
 package com.hishob.expense.service;
 
-import com.hishob.expense.client.GroupServiceClient;
+import com.hishob.expense.service.GroupService;
 import com.hishob.expense.client.SettlementServiceClient;
 import com.hishob.expense.client.SettlementServiceClient.CompletedSettlementData;
 import com.hishob.expense.dto.CategorySpendingSummary;
@@ -43,7 +43,7 @@ class ExpenseAnalyticsServiceTest {
     private ExpenseRepository expenseRepository;
 
     @Mock
-    private GroupServiceClient groupServiceClient;
+    private GroupService groupService;
 
     @Mock
     private SettlementServiceClient settlementServiceClient;
@@ -58,7 +58,7 @@ class ExpenseAnalyticsServiceTest {
     void setUp() {
         analyticsService = new ExpenseAnalyticsService(
                 expenseRepository,
-                groupServiceClient,
+                groupService,
                 settlementServiceClient
         );
 
@@ -94,27 +94,27 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("1. Analytics for valid group member succeeds")
     void testAnalyticsForValidGroupMember() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response).isNotNull();
         assertThat(response.getGroupId()).isEqualTo(groupId);
-        verify(groupServiceClient).validateMember(groupId, user1, "Current user");
+        verify(groupService).validateMember(groupId, user1, "Current user");
     }
 
     @Test
     @DisplayName("2. Non-member receives 403 (PermissionDeniedException)")
     void testNonMemberReceivesPermissionDenied() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
+        doNothing().when(groupService).validateGroupExists(groupId);
         doThrow(new PermissionDeniedException("Current user is not a member of this group"))
-                .when(groupServiceClient).validateMember(groupId, user1, "Current user");
+                .when(groupService).validateMember(groupId, user1, "Current user");
 
-        assertThatThrownBy(() -> analyticsService.getGroupAnalytics(groupId, user1, null, null))
+        assertThatThrownBy(() -> analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null))
                 .isInstanceOf(PermissionDeniedException.class)
                 .hasMessageContaining("not a member");
     }
@@ -122,9 +122,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("3, 4, 5. Total spending, expense count, and average calculation")
     void testSpendingCountAndAverageCalculation() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
@@ -139,7 +139,7 @@ class ExpenseAnalyticsServiceTest {
 
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(e1, e2));
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response.getTotalSpending()).isEqualByComparingTo("450.00");
         assertThat(response.getExpenseCount()).isEqualTo(2);
@@ -149,9 +149,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("6 & 7. Member totalPaid, totalShare, and netPosition calculation")
     void testMemberSpendingBreakdown() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
@@ -162,7 +162,7 @@ class ExpenseAnalyticsServiceTest {
 
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(e1));
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         MemberSpendingSummary u1Summary = response.getMemberSpending().stream()
                 .filter(m -> m.getUserId().equals(user1)).findFirst().orElseThrow();
@@ -182,9 +182,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("8. Monthly aggregation uses createdAt only")
     void testMonthlyAggregationUsesCreatedAt() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Instant sepDate = Instant.parse("2026-09-15T10:00:00Z");
@@ -195,7 +195,7 @@ class ExpenseAnalyticsServiceTest {
 
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(octExp, sepExp));
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response.getMonthlyTrends()).hasSize(2);
         MonthlySpendingSummary sepSummary = response.getMonthlyTrends().stream()
@@ -214,15 +214,15 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("9. Date filtering routes to repository between query")
     void testDateFiltering() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         when(expenseRepository.findByGroupIdAndCreatedAtBetweenOrderByCreatedAtDesc(eq(groupId), any(), any()))
                 .thenReturn(List.of());
 
-        analyticsService.getGroupAnalytics(groupId, user1, "2026-10-01", "2026-10-31");
+        analyticsService.getGroupAnalytics(groupId, user1, "2026-10-01", "2026-10-31", null, null);
 
         verify(expenseRepository).findByGroupIdAndCreatedAtBetweenOrderByCreatedAtDesc(eq(groupId), any(), any());
     }
@@ -230,13 +230,13 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("10. Empty group / no expenses returns valid zero values")
     void testEmptyGroupReturnsZeroValues() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response.getTotalSpending()).isEqualByComparingTo("0.00");
         assertThat(response.getExpenseCount()).isEqualTo(0);
@@ -250,8 +250,8 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("11. CSV response generates formatted content with quotes escaping")
     void testCsvExport() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
 
         Instant now = Instant.parse("2026-10-04T12:00:00Z");
         Expense e = createTestExpense(UUID.randomUUID(), groupId, "Dinner with \"special\" guest",
@@ -262,7 +262,7 @@ class ExpenseAnalyticsServiceTest {
 
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(e));
 
-        String csv = analyticsService.exportExpensesCsv(groupId, user1, null, null);
+        String csv = analyticsService.exportExpensesCsv(groupId, user1, null, null, null, null);
 
         assertThat(csv).contains("Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count");
         assertThat(csv).contains("\"Dinner with \"\"special\"\" guest\"");
@@ -275,14 +275,14 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("12. Settlement service communication failure propagates ServiceUnavailableException")
     void testSettlementServiceFailureHandling() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
         when(settlementServiceClient.getCompletedSettlements(groupId))
                 .thenThrow(new ServiceUnavailableException("Settlement Service unavailable"));
 
-        assertThatThrownBy(() -> analyticsService.getGroupAnalytics(groupId, user1, null, null))
+        assertThatThrownBy(() -> analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null))
                 .isInstanceOf(ServiceUnavailableException.class)
                 .hasMessageContaining("Settlement Service unavailable");
     }
@@ -290,9 +290,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("13. Total settled volume sums completed settlements")
     void testTotalSettledVolumeCalculation() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of());
 
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of(
@@ -300,7 +300,7 @@ class ExpenseAnalyticsServiceTest {
                 new CompletedSettlementData(user2, user1, new BigDecimal("45.50"))
         ));
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response.getTotalSettledVolume()).isEqualByComparingTo("145.50");
     }
@@ -308,9 +308,9 @@ class ExpenseAnalyticsServiceTest {
     @Test
     @DisplayName("14. Group analytics returns category breakdown with correct amounts and percentages")
     void testCategorySpendingBreakdown() {
-        doNothing().when(groupServiceClient).validateGroupExists(groupId);
-        doNothing().when(groupServiceClient).validateMember(groupId, user1, "Current user");
-        when(groupServiceClient.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1));
         when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
 
         Expense e1 = createTestExpense(UUID.randomUUID(), groupId, "Lunch", new BigDecimal("300.00"), user1, Instant.now(), List.of(
@@ -325,7 +325,7 @@ class ExpenseAnalyticsServiceTest {
 
         when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(List.of(e1, e2));
 
-        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null);
+        GroupAnalyticsResponse response = analyticsService.getGroupAnalytics(groupId, user1, null, null, null, null);
 
         assertThat(response.getCategorySpending()).hasSize(2);
 
@@ -432,5 +432,122 @@ class ExpenseAnalyticsServiceTest {
         assertThat(csv).contains("User-" + user2.toString().substring(0, 8));
         assertThat(csv).contains("You");
         assertThat(csv).contains("150.00");
+    }
+
+    // ── #137 report filters must reach every section and the CSV ─────────────
+
+    private static final String CSV_HEADER =
+            "Date,Description,Category,Total Amount (INR),Paid By,Split Type,Participants Count";
+
+    /** E1 paid by user1 (EQUAL, FOOD), E2 paid by user2 (EXACT, TRAVEL). */
+    private List<Expense> twoDifferentPayersAndSplitTypes(Instant base) {
+        Expense e1 = createTestExpense(UUID.randomUUID(), groupId, "Lunch",
+                new BigDecimal("300.00"), user1, base, List.of(
+                        new ExpenseSplit(user1, new BigDecimal("150.00"), SplitType.EQUAL, null),
+                        new ExpenseSplit(user2, new BigDecimal("150.00"), SplitType.EQUAL, null)
+                ));
+        e1.setCategory(ExpenseCategory.FOOD);
+
+        Expense e2 = createTestExpense(UUID.randomUUID(), groupId, "Cab",
+                new BigDecimal("100.00"), user2, base.plusSeconds(86_400), List.of(
+                        new ExpenseSplit(user1, new BigDecimal("40.00"), SplitType.EXACT, null),
+                        new ExpenseSplit(user2, new BigDecimal("60.00"), SplitType.EXACT, null)
+                ));
+        e2.setCategory(ExpenseCategory.TRAVEL);
+        e2.setSplitType(SplitType.EXACT);
+
+        return List.of(e1, e2);
+    }
+
+    private void stubGroupAndEmptySettlements(List<Expense> expenses) {
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(groupService.getGroupMemberIds(groupId)).thenReturn(List.of(user1, user2));
+        when(settlementServiceClient.getCompletedSettlements(groupId)).thenReturn(List.of());
+        when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId)).thenReturn(expenses);
+    }
+
+    @Test
+    @DisplayName("19. Payer filter narrows KPIs, category and monthly sections, not just the member table")
+    void testPayerFilterAppliesToEveryAnalyticsSection() {
+        stubGroupAndEmptySettlements(twoDifferentPayersAndSplitTypes(Instant.parse("2026-10-04T12:00:00Z")));
+
+        GroupAnalyticsResponse response =
+                analyticsService.getGroupAnalytics(groupId, user1, null, null, user1, null);
+
+        assertThat(response.getExpenseCount()).isEqualTo(1);
+        assertThat(response.getTotalSpending()).isEqualByComparingTo("300.00");
+        assertThat(response.getAverageExpense()).isEqualByComparingTo("300.00");
+
+        assertThat(response.getCategorySpending()).hasSize(1);
+        assertThat(response.getCategorySpending().get(0).getCategory()).isEqualTo(ExpenseCategory.FOOD);
+        assertThat(response.getCategorySpending().get(0).getPercentageOfTotal()).isEqualTo(100.0);
+
+        assertThat(response.getMonthlyTrends()).hasSize(1);
+        assertThat(response.getMonthlyTrends().get(0).getExpenseCount()).isEqualTo(1);
+        assertThat(response.getMonthlyTrends().get(0).getTotalAmount()).isEqualByComparingTo("300.00");
+
+        // Members still appear, but only with what the selected payer's expenses say about them.
+        MemberSpendingSummary payer = response.getMemberSpending().stream()
+                .filter(m -> m.getUserId().equals(user1)).findFirst().orElseThrow();
+        assertThat(payer.getTotalPaid()).isEqualByComparingTo("300.00");
+        assertThat(payer.getTotalShare()).isEqualByComparingTo("150.00");
+
+        MemberSpendingSummary other = response.getMemberSpending().stream()
+                .filter(m -> m.getUserId().equals(user2)).findFirst().orElseThrow();
+        assertThat(other.getTotalPaid()).isEqualByComparingTo("0.00");
+        assertThat(other.getTotalShare()).isEqualByComparingTo("150.00");
+    }
+
+    @Test
+    @DisplayName("20. Split type filter narrows the same sections; previously the control changed nothing")
+    void testSplitTypeFilterAppliesToEveryAnalyticsSection() {
+        stubGroupAndEmptySettlements(twoDifferentPayersAndSplitTypes(Instant.parse("2026-10-04T12:00:00Z")));
+
+        GroupAnalyticsResponse response =
+                analyticsService.getGroupAnalytics(groupId, user1, null, null, null, SplitType.EXACT);
+
+        assertThat(response.getExpenseCount()).isEqualTo(1);
+        assertThat(response.getTotalSpending()).isEqualByComparingTo("100.00");
+        assertThat(response.getCategorySpending()).hasSize(1);
+        assertThat(response.getCategorySpending().get(0).getCategory()).isEqualTo(ExpenseCategory.TRAVEL);
+    }
+
+    @Test
+    @DisplayName("21. CSV export respects the payer and split-type filters shown on the page")
+    void testCsvExportRespectsFilters() {
+        doNothing().when(groupService).validateGroupExists(groupId);
+        doNothing().when(groupService).validateMember(groupId, user1, "Current user");
+        when(expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId))
+                .thenReturn(twoDifferentPayersAndSplitTypes(Instant.parse("2026-10-04T12:00:00Z")));
+
+        String payerCsv = analyticsService.exportExpensesCsv(groupId, user1, null, null, user1, null);
+        assertThat(payerCsv).contains("Lunch");
+        assertThat(payerCsv).doesNotContain("Cab");
+
+        String splitCsv = analyticsService.exportExpensesCsv(groupId, user1, null, null, null, SplitType.EXACT);
+        assertThat(splitCsv).contains("Cab");
+        assertThat(splitCsv).doesNotContain("Lunch");
+    }
+
+    @Test
+    @DisplayName("22. Filters matching nothing report zero honestly instead of reusing the unfiltered totals")
+    void testFiltersWithNoMatchesReportEmptyResults() {
+        UUID stranger = UUID.randomUUID();
+        stubGroupAndEmptySettlements(twoDifferentPayersAndSplitTypes(Instant.parse("2026-10-04T12:00:00Z")));
+
+        GroupAnalyticsResponse response =
+                analyticsService.getGroupAnalytics(groupId, user1, null, null, stranger, null);
+
+        assertThat(response.getExpenseCount()).isZero();
+        assertThat(response.getTotalSpending()).isEqualByComparingTo("0.00");
+        assertThat(response.getAverageExpense()).isEqualByComparingTo("0.00");
+        assertThat(response.getMonthlyTrends()).isEmpty();
+        assertThat(response.getCategorySpending()).isEmpty();
+        assertThat(response.getMemberSpending())
+                .allSatisfy(m -> assertThat(m.getTotalPaid()).isEqualByComparingTo("0.00"));
+
+        String csv = analyticsService.exportExpensesCsv(groupId, user1, null, null, stranger, null);
+        assertThat(csv.lines()).containsExactly(CSV_HEADER);
     }
 }

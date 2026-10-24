@@ -3,8 +3,12 @@ package com.hishob.auth.controller;
 import com.hishob.auth.dto.AuthResponse;
 import com.hishob.auth.dto.LoginRequest;
 import com.hishob.auth.dto.RegisterRequest;
+import com.hishob.auth.dto.ResendVerificationRequest;
+import com.hishob.auth.dto.ResendVerificationResponse;
 import com.hishob.auth.dto.UserResponse;
 import com.hishob.auth.dto.UserSummaryResponse;
+import com.hishob.auth.dto.VerifyEmailRequest;
+import com.hishob.auth.dto.VerifyEmailResponse;
 import com.hishob.auth.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -43,6 +47,18 @@ public class AuthController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/verify-email")
+    public ResponseEntity<VerifyEmailResponse> verifyEmail(@Valid @RequestBody VerifyEmailRequest request) {
+        VerifyEmailResponse response = authService.verifyEmail(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<ResendVerificationResponse> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
+        ResendVerificationResponse response = authService.resendVerification(request);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(@AuthenticationPrincipal UserDetails userDetails) {
         UserResponse response = authService.getCurrentUser(userDetails.getUsername());
@@ -59,8 +75,10 @@ public class AuthController {
     }
 
     @GetMapping("/users/{userId}")
-    public ResponseEntity<UserSummaryResponse> getUserById(@PathVariable UUID userId) {
-        UserSummaryResponse response = authService.getUserSummaryById(userId);
+    public ResponseEntity<UserSummaryResponse> getUserById(
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        UserSummaryResponse response = authService.getUserSummaryById(userId, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 

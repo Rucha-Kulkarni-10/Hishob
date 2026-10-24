@@ -1,6 +1,5 @@
 package com.hishob.expense.service;
 
-import com.hishob.expense.client.GroupServiceClient;
 import com.hishob.expense.client.NotificationServiceClient;
 import com.hishob.expense.dto.CreateExpenseCommentRequest;
 import com.hishob.expense.dto.CreateNotificationRequest;
@@ -14,6 +13,8 @@ import com.hishob.expense.exception.ExpenseNotFoundException;
 import com.hishob.expense.exception.PermissionDeniedException;
 import com.hishob.expense.repository.ExpenseCommentRepository;
 import com.hishob.expense.repository.ExpenseRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,22 +30,24 @@ import java.util.stream.Collectors;
 @Transactional
 public class ExpenseCommentService {
 
+    private static final Logger log = LoggerFactory.getLogger(ExpenseCommentService.class);
+
     private static final String TYPE_COMMENT_ADDED = "EXPENSE_COMMENT_ADDED";
     private static final int PREVIEW_MAX_LENGTH = 80;
 
     private final ExpenseRepository expenseRepository;
     private final ExpenseCommentRepository expenseCommentRepository;
-    private final GroupServiceClient groupServiceClient;
+    private final GroupService groupService;
     private final NotificationServiceClient notificationServiceClient;
 
     public ExpenseCommentService(
             ExpenseRepository expenseRepository,
             ExpenseCommentRepository expenseCommentRepository,
-            GroupServiceClient groupServiceClient,
+            GroupService groupService,
             NotificationServiceClient notificationServiceClient) {
         this.expenseRepository = expenseRepository;
         this.expenseCommentRepository = expenseCommentRepository;
-        this.groupServiceClient = groupServiceClient;
+        this.groupService = groupService;
         this.notificationServiceClient = notificationServiceClient;
     }
 
@@ -116,8 +119,8 @@ public class ExpenseCommentService {
                 .orElseThrow(() -> new ExpenseNotFoundException("Expense not found: " + expenseId));
 
         if (expense.getGroupId() != null) {
-            groupServiceClient.validateGroupExists(expense.getGroupId());
-            groupServiceClient.validateMember(expense.getGroupId(), currentUserId, "Caller");
+            groupService.validateGroupExists(expense.getGroupId());
+            groupService.validateMember(expense.getGroupId(), currentUserId, "Caller");
         } else {
             if (!isPersonalExpenseParticipant(expense, currentUserId)) {
                 throw new ExpenseNotFoundException("Expense not found: " + expenseId);
@@ -143,8 +146,8 @@ public class ExpenseCommentService {
     }
 
     private void sendCommentNotifications(Expense expense, ExpenseComment comment, UUID actorUserId) {
+        Set<UUID> recipientIds = new LinkedHashSet<>();
         try {
-            Set<UUID> recipientIds = new LinkedHashSet<>();
             if (expense.getCreatedBy() != null) {
                 recipientIds.add(expense.getCreatedBy());
             }
@@ -163,6 +166,8 @@ public class ExpenseCommentService {
             recipientIds.remove(actorUserId);
 
             if (recipientIds.isEmpty()) {
+                log.debug("No eligible recipient for {} on expense {} (group {}); dispatch skipped",
+                        TYPE_COMMENT_ADDED, expense.getId(), expense.getGroupId());
                 return;
             }
 
@@ -196,6 +201,8 @@ public class ExpenseCommentService {
             }
         } catch (Exception e) {
             // Isolation: ensure notification failure never rolls back comment creation
+            log.warn("Failed to dispatch {} notification for expense {} in group {} to {} recipient(s): {}",
+                    TYPE_COMMENT_ADDED, expense.getId(), expense.getGroupId(), recipientIds.size(), e.toString());
         }
     }
 }

@@ -14,8 +14,7 @@ import Modal from '@/components/common/Modal';
 import FormField from '@/components/common/FormField';
 import { addMember } from '@/services/groupService';
 import type { AddMemberRequest, MemberResponse } from '@/types/groups';
-import { getErrorMessage } from '@/utils/errorUtils';
-import axios from 'axios';
+import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
 import type { ApiError } from '@/types/auth';
 
 const UUID_RE =
@@ -79,7 +78,7 @@ export default function AddMemberModal({
       resetState();
       onClose();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
+      if (isAxiosError(err)) {
         const data = err.response?.data as ApiError | undefined;
         if (data?.validationErrors?.userId) {
           setFieldError(data.validationErrors.userId);

@@ -4,26 +4,27 @@ import com.hishob.auth.entity.User;
 
 import java.util.UUID;
 
+/**
+ * Identity projection for cross-service name resolution. Deliberately excludes contact
+ * details: callers need a display name for a known user ID, not their address.
+ */
 public class UserSummaryResponse {
 
     private UUID id;
     private String name;
-    private String email;
 
     public UserSummaryResponse() {
     }
 
-    public UserSummaryResponse(UUID id, String name, String email) {
+    public UserSummaryResponse(UUID id, String name) {
         this.id = id;
         this.name = name;
-        this.email = email;
     }
 
     public static UserSummaryResponse fromEntity(User user) {
         return new UserSummaryResponse(
                 user.getId(),
-                user.getName(),
-                user.getEmail()
+                user.getName()
         );
     }
 
@@ -41,14 +42,6 @@ public class UserSummaryResponse {
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
     }
 
 }

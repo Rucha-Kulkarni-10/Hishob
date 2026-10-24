@@ -14,9 +14,8 @@ import Modal from '@/components/common/Modal';
 import FormField from '@/components/common/FormField';
 import { createGroup } from '@/services/groupService';
 import type { CreateGroupRequest, GroupResponse } from '@/types/groups';
-import { getErrorMessage } from '@/utils/errorUtils';
+import { getErrorMessage, isAxiosError } from '@/utils/errorUtils';
 import type { ApiError } from '@/types/auth';
-import axios from 'axios';
 
 interface CreateGroupModalProps {
   isOpen: boolean;
@@ -83,7 +82,7 @@ export default function CreateGroupModal({
       onClose();
     } catch (err: unknown) {
       // Surface backend per-field validationErrors if present
-      if (axios.isAxiosError(err)) {
+      if (isAxiosError(err)) {
         const data = err.response?.data as ApiError | undefined;
         if (data?.validationErrors) {
           const next: typeof errors = {};
