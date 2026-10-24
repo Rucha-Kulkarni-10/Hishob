@@ -52,6 +52,7 @@ class NotificationInternalControllerTest {
     private MockMvc mockMvc;
 
     private static final String INTERNAL_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
+    private static final String INTERNAL_TOKEN_SAME_LENGTH = "hishob-test-internal-token-for-automated-tests-onlY";
     private static final String WRONG_TOKEN = "definitely-wrong-token";
 
     @BeforeEach
@@ -284,6 +285,48 @@ class NotificationInternalControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── test 11b: internal-token trust boundary both sides ──────────────────
+
+    @Test
+    @DisplayName("11b.1 Same-length token differing only in the final byte returns 401")
+    void createNotification_sameLengthDifferentToken() throws Exception {
+        Map<String, Object> request = Map.of(
+                "userId", UUID.randomUUID().toString(),
+                "type", NotificationType.EXPENSE_ADDED.name(),
+                "message", "Test message"
+        );
+
+        mockMvc.perform(post("/internal/notifications")
+                        .header("X-Internal-Token", INTERNAL_TOKEN_SAME_LENGTH)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("11b.2 A bearer JWT without the internal token returns 401")
+    void createNotification_userJwtIsNotAnInternalCredential() throws Exception {
+        Map<String, Object> request = Map.of(
+                "userId", UUID.randomUUID().toString(),
+                "type", NotificationType.EXPENSE_ADDED.name(),
+                "message", "Test message"
+        );
+
+        mockMvc.perform(post("/internal/notifications")
+                        .header("Authorization", "Bearer not.a.valid.token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("11b.3 The internal token does not authenticate the user-facing notification list")
+    void listNotifications_internalTokenOnlyIsRejected() throws Exception {
+        mockMvc.perform(get("/api/notifications")
+                        .header("X-Internal-Token", INTERNAL_TOKEN))
+                .andExpect(status().isForbidden());
     }
 
     // ── test 12: all notification types work ────────────────────────────────

@@ -29,7 +29,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/health").permitAll()
-                        .requestMatchers("/internal/**").authenticated()
+                        .requestMatchers(InternalAuthFilter.INTERNAL_MATCHER).hasAuthority(InternalAuthFilter.INTERNAL_SERVICE_AUTHORITY)
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(internalAuthFilter, UsernamePasswordAuthenticationFilter.class)

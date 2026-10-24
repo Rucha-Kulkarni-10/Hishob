@@ -3,6 +3,8 @@ spring:
     gateway:
       server:
         webflux:
+          default-filters:
+            - RemoveRequestHeader=X-Internal-Token
           routes:
             - id: auth-service
               uri: ${AUTH_SERVICE_URL:lb://auth-service}

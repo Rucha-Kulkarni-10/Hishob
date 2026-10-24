@@ -32,7 +32,7 @@ public class SecurityConfig {
                         .requestMatchers("/health").permitAll()
                         // Group writes belong to Expense Service; this service is read-only.
                         .requestMatchers(HttpMethod.POST, "/api/groups/**").denyAll()
-                        .requestMatchers("/internal/**").authenticated()
+                        .requestMatchers(InternalAuthFilter.INTERNAL_MATCHER).hasAuthority(InternalAuthFilter.INTERNAL_SERVICE_AUTHORITY)
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(internalAuthFilter, UsernamePasswordAuthenticationFilter.class)

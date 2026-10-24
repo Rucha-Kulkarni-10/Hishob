@@ -75,8 +75,10 @@ public class AuthController {
     }
 
     @GetMapping("/users/{userId}")
-    public ResponseEntity<UserSummaryResponse> getUserById(@PathVariable UUID userId) {
-        UserSummaryResponse response = authService.getUserSummaryById(userId);
+    public ResponseEntity<UserSummaryResponse> getUserById(
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        UserSummaryResponse response = authService.getUserSummaryById(userId, userDetails.getUsername());
         return ResponseEntity.ok(response);
     }
 

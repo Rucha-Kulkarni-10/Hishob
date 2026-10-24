@@ -122,6 +122,31 @@ class GatewayRouteSourceConsistencyTest {
         assertThat(routes.get(routes.size() - 1).fallbackService()).isEqualTo("expense-service");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "gateway/api-gateway/src/main/resources/application.yml",
+            "infrastructure/config-server/config/api-gateway.yml",
+            "infrastructure/config-server/src/main/resources/config/api-gateway.yml"
+    })
+    @DisplayName("Every route document strips the inbound internal-service token and routes no /internal path")
+    void testInternalTokenStripAndNoInternalRouteInEverySource(String source) {
+        String document;
+        try {
+            document = Files.readString(repoRoot().resolve(source));
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot read gateway route document " + source, e);
+        }
+
+        assertThat(document)
+                .as("X-Internal-Token must be stripped in " + source)
+                .contains("default-filters:")
+                .contains("- RemoveRequestHeader=X-Internal-Token");
+
+        assertThat(routes(source))
+                .as("No gateway route may expose an internal path")
+                .allSatisfy(route -> assertThat(route.path()).doesNotStartWith("/internal"));
+    }
+
     private Route routeFor(List<Route> routes, String path) {
         return routes.stream()
                 .filter(route -> path.equals(route.path()))

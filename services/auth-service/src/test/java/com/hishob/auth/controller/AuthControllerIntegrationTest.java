@@ -1,6 +1,8 @@
 package com.hishob.auth.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hishob.auth.dto.AuthResponse;
 import com.hishob.auth.dto.LoginRequest;
 import com.hishob.auth.dto.RegisterRequest;
@@ -16,9 +18,13 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -95,7 +101,54 @@ class AuthControllerIntegrationTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
-                .andExpect(jsonPath("$.message").value("Email address is already registered: duplicate@example.com"));
+                .andExpect(jsonPath("$.message").value("Registration failed because the account already exists."))
+                .andExpect(jsonPath("$.path").value("/api/auth/register"))
+                .andExpect(content().string(not(containsString("@"))))
+                .andExpect(content().string(not(containsString("duplicate@example.com"))))
+                .andExpect(content().string(not(containsString("User One"))));
+    }
+
+    @Test
+    @DisplayName("POST /api/auth/register - duplicate response is identical for any casing of the address")
+    void testRegister_DuplicateEmailRepliesIdenticallyForEveryCasing() throws Exception {
+        RegisterRequest first = new RegisterRequest("Case User", "cased@example.com", "password123");
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(first)))
+                .andExpect(status().isCreated());
+
+        JsonNode exact = duplicateBody("Case User", "cased@example.com");
+        JsonNode shuffled = duplicateBody("Case User", "Cased@Example.COM");
+
+        // B-07: the body must not vary with the submitted address, and must never carry one.
+        assertThat(shuffled).isEqualTo(exact);
+        assertThat(exact.toString()).doesNotContain("@").doesNotContain("cased@example.com");
+
+        String rejected = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(
+                                new RegisterRequest("Case User", "  Cased@Example.com  ", "password123"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.validationErrors.email").isNotEmpty())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(rejected).doesNotContain("@").doesNotContain("Cased@Example.com");
+    }
+
+    private JsonNode duplicateBody(String name, String email) throws Exception {
+        String raw = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new RegisterRequest(name, email, "password123"))))
+                .andExpect(status().isConflict())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode body = objectMapper.readTree(raw);
+        ((ObjectNode) body).remove("timestamp"); // wall-clock differs between calls, everything else must not
+        return body;
     }
 
     @Test

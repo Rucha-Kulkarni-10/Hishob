@@ -45,6 +45,7 @@ class BalanceInternalControllerSecurityTest {
     private MockMvc mockMvc;
 
     private static final String VALID_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
+    private static final String VALID_TOKEN_SAME_LENGTH = "hishob-test-internal-token-for-automated-tests-onlY";
     private static final String WRONG_TOKEN = "wrong-token";
 
     private UUID groupId;
@@ -100,5 +101,21 @@ class BalanceInternalControllerSecurityTest {
         mockMvc.perform(get("/api/groups/" + groupId + "/balances")
                         .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, VALID_TOKEN))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Same-length token differing only in the final byte returns 401")
+    void testGroupBalances_SameLengthDifferentToken_Unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/groups/" + groupId + "/balances")
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, VALID_TOKEN_SAME_LENGTH))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("A bearer JWT is not an internal credential — internal read still returns 401")
+    void testGroupBalances_UserJwtWithoutInternalToken_Unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/groups/" + groupId + "/balances")
+                        .header("Authorization", "Bearer not.a.valid.token"))
+                .andExpect(status().isUnauthorized());
     }
 }

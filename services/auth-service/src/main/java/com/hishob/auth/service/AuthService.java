@@ -11,11 +11,13 @@ import com.hishob.auth.dto.UserSummaryResponse;
 import com.hishob.auth.dto.VerifyEmailRequest;
 import com.hishob.auth.dto.VerifyEmailResponse;
 import com.hishob.auth.email.model.EmailSendResult;
+import com.hishob.auth.entity.FriendshipStatus;
 import com.hishob.auth.entity.User;
 import com.hishob.auth.exception.DuplicateEmailException;
 import com.hishob.auth.exception.EmailNotVerifiedException;
 import com.hishob.auth.exception.InvalidCredentialsException;
 import com.hishob.auth.exception.ResourceNotFoundException;
+import com.hishob.auth.repository.FriendshipRepository;
 import com.hishob.auth.repository.UserRepository;
 import com.hishob.auth.security.JwtService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,27 +34,29 @@ import java.util.stream.Collectors;
 @Service
 public class AuthService {
 
+    /**
+     * B-09: one message for both "no such user" and "you may not see this user", so a guessed UUID
+     * cannot be confirmed or denied through {@code GET /api/auth/users/{userId}}.
+     */
+    private static final String USER_SUMMARY_ABSENT = "User not found with id: ";
+
     private final UserRepository userRepository;
+    private final FriendshipRepository friendshipRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final EmailVerificationService emailVerificationService;
     private final EmailVerificationProperties emailVerificationProperties;
 
-    public AuthService(
-            UserRepository userRepository,
-            PasswordEncoder passwordEncoder,
-            JwtService jwtService) {
-        this(userRepository, passwordEncoder, jwtService, null, new EmailVerificationProperties());
-    }
-
     @Autowired
     public AuthService(
             UserRepository userRepository,
+            FriendshipRepository friendshipRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             EmailVerificationService emailVerificationService,
             EmailVerificationProperties emailVerificationProperties) {
         this.userRepository = userRepository;
+        this.friendshipRepository = friendshipRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.emailVerificationService = emailVerificationService;
@@ -64,7 +68,8 @@ public class AuthService {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
 
         if (userRepository.existsByEmail(normalizedEmail)) {
-            throw new DuplicateEmailException("Email address is already registered: " + normalizedEmail);
+            // Must not echo the submitted or stored address: the response body is public.
+            throw new DuplicateEmailException("Registration failed because the account already exists.");
         }
 
         User user = new User();
@@ -151,9 +156,21 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
-    public UserSummaryResponse getUserSummaryById(UUID userId) {
+    public UserSummaryResponse getUserSummaryById(UUID userId, String viewerEmail) {
+        User viewer = userRepository.findByEmail(viewerEmail.trim().toLowerCase())
+                .orElseThrow(() -> new ResourceNotFoundException(USER_SUMMARY_ABSENT + userId));
+
+        boolean isSelf = viewer.getId().equals(userId);
+        boolean isAcceptedFriend = !isSelf
+                && friendshipRepository.countBetween(viewer.getId(), userId, FriendshipStatus.ACCEPTED) > 0;
+
+        if (!isSelf && !isAcceptedFriend) {
+            throw new ResourceNotFoundException(USER_SUMMARY_ABSENT + userId);
+        }
+
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
+                .orElseThrow(() -> new ResourceNotFoundException(USER_SUMMARY_ABSENT + userId));
+
         return UserSummaryResponse.fromEntity(user);
     }
 

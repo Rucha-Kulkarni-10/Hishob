@@ -7,9 +7,11 @@ import com.hishob.auth.dto.RegisterRequest;
 import com.hishob.auth.dto.ResendVerificationRequest;
 import com.hishob.auth.dto.ResendVerificationResponse;
 import com.hishob.auth.dto.UserResponse;
+import com.hishob.auth.dto.UserSummaryResponse;
 import com.hishob.auth.dto.VerifyEmailRequest;
 import com.hishob.auth.dto.VerifyEmailResponse;
 import com.hishob.auth.email.model.EmailSendResult;
+import com.hishob.auth.entity.FriendshipStatus;
 import com.hishob.auth.entity.User;
 import com.hishob.auth.exception.DuplicateEmailException;
 import com.hishob.auth.exception.EmailNotVerifiedException;
@@ -45,6 +47,9 @@ class AuthServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private com.hishob.auth.repository.FriendshipRepository friendshipRepository;
+
+    @Mock
     private PasswordEncoder passwordEncoder;
 
     @Mock
@@ -62,6 +67,7 @@ class AuthServiceTest {
         emailVerificationProperties.setRequired(false);
         authService = new AuthService(
                 userRepository,
+                friendshipRepository,
                 passwordEncoder,
                 jwtService,
                 emailVerificationService,
@@ -104,7 +110,25 @@ class AuthServiceTest {
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(DuplicateEmailException.class)
-                .hasMessageContaining("bob@example.com");
+                .hasMessage("Registration failed because the account already exists.")
+                .hasMessageNotContaining("@")
+                .hasMessageNotContaining("bob@example.com")
+                .hasMessageNotContaining("Bob");
+    }
+
+    @Test
+    @DisplayName("Duplicate registration does not disclose the stored address when input differs in case")
+    void testRegister_DuplicateEmailMixedCaseHidesStoredAddress() {
+        RegisterRequest request = new RegisterRequest("Bob", "  Bob@Example.COM  ", "secretPassword");
+
+        when(userRepository.existsByEmail("bob@example.com")).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.register(request))
+                .isInstanceOf(DuplicateEmailException.class)
+                .hasMessageNotContaining("@")
+                .hasMessageNotContaining("bob@example.com")
+                .hasMessageNotContaining("Bob@Example.COM");
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
@@ -318,6 +342,95 @@ class AuthServiceTest {
 
         assertThat(response).isEqualTo(expectedResponse);
         verify(emailVerificationService).resendVerification("test@example.com");
+    }
+
+    @Test
+    @DisplayName("B-09: a user may read their own summary")
+    void testGetUserSummaryById_SelfIsAllowed() {
+        UUID viewerId = UUID.randomUUID();
+        User viewer = new User(viewerId, "Alice", "alice@example.com", "hashedSecretPassword");
+
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(viewer));
+        when(userRepository.findById(viewerId)).thenReturn(Optional.of(viewer));
+
+        UserSummaryResponse response = authService.getUserSummaryById(viewerId, "alice@example.com");
+
+        assertThat(response.getId()).isEqualTo(viewerId);
+        assertThat(response.getName()).isEqualTo("Alice");
+        verify(friendshipRepository, never()).countBetween(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("B-09: an accepted friend may read the summary")
+    void testGetUserSummaryById_AcceptedFriendIsAllowed() {
+        UUID viewerId = UUID.randomUUID();
+        UUID friendId = UUID.randomUUID();
+        User viewer = new User(viewerId, "Alice", "alice@example.com", "hashedSecretPassword");
+        User friend = new User(friendId, "Bob", "bob@example.com", "hashedSecretPassword");
+
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(viewer));
+        when(friendshipRepository.countBetween(viewerId, friendId, FriendshipStatus.ACCEPTED)).thenReturn(1L);
+        when(userRepository.findById(friendId)).thenReturn(Optional.of(friend));
+
+        UserSummaryResponse response = authService.getUserSummaryById(friendId, "alice@example.com");
+
+        assertThat(response.getId()).isEqualTo(friendId);
+        assertThat(response.getName()).isEqualTo("Bob");
+    }
+
+    @Test
+    @DisplayName("B-09: a stranger cannot read the summary and gets the same answer as a missing id")
+    void testGetUserSummaryById_UnrelatedUserIsDeniedAsNotFound() {
+        UUID viewerId = UUID.randomUUID();
+        UUID strangerId = UUID.randomUUID();
+        User viewer = new User(viewerId, "Alice", "alice@example.com", "hashedSecretPassword");
+
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(viewer));
+        when(friendshipRepository.countBetween(viewerId, strangerId, FriendshipStatus.ACCEPTED)).thenReturn(0L);
+
+        assertThatThrownBy(() -> authService.getUserSummaryById(strangerId, "alice@example.com"))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("User not found with id: " + strangerId);
+
+        verify(userRepository, never()).findById(strangerId);
+    }
+
+    @Test
+    @DisplayName("B-09: inaccessible and non-existent ids are byte-for-byte indistinguishable")
+    void testGetUserSummaryById_InaccessibleMatchesNonExistentMessage() {
+        UUID viewerId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+        User viewer = new User(viewerId, "Alice", "alice@example.com", "hashedSecretPassword");
+
+        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(viewer));
+        when(friendshipRepository.countBetween(viewerId, targetId, FriendshipStatus.ACCEPTED)).thenReturn(0L);
+        String inaccessibleMessage = summaryFailureMessage(targetId);
+
+        when(friendshipRepository.countBetween(viewerId, targetId, FriendshipStatus.ACCEPTED)).thenReturn(1L);
+        when(userRepository.findById(targetId)).thenReturn(Optional.empty());
+        String nonExistentMessage = summaryFailureMessage(targetId);
+
+        assertThat(inaccessibleMessage).isEqualTo(nonExistentMessage);
+    }
+
+    @Test
+    @DisplayName("B-09: an unknown viewer email never reaches the user lookup")
+    void testGetUserSummaryById_UnknownViewerFailsBeforeLookup() {
+        when(userRepository.findByEmail("ghost@example.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.getUserSummaryById(UUID.randomUUID(), "ghost@example.com"))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(userRepository, never()).findById(any());
+    }
+
+    private String summaryFailureMessage(UUID userId) {
+        try {
+            authService.getUserSummaryById(userId, "alice@example.com");
+            throw new AssertionError("Expected the summary lookup to be refused for " + userId);
+        } catch (ResourceNotFoundException expected) {
+            return expected.getMessage();
+        }
     }
 
 }

@@ -225,10 +225,20 @@ public class FriendshipService {
             return Collections.emptyList();
         }
 
-        List<User> matched = userRepository.searchUsers(query.trim(), currentUser.getId(), PageRequest.of(0, 20));
+        List<User> matched = userRepository.searchUsers(
+                escapeLikePattern(query.trim()), currentUser.getId(), PageRequest.of(0, 20));
         return matched.stream()
                 .map(UserSearchResponse::fromEntity)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * B-10: user input becomes the middle of a LIKE pattern, so its own wildcards have to lose their
+     * special meaning. The escape character is doubled first; escaping '%' and '_' before it would
+     * turn the inserted '!' characters into new escape sequences.
+     */
+    static String escapeLikePattern(String raw) {
+        return raw.replace("!", "!!").replace("%", "!%").replace("_", "!_");
     }
 
     @Transactional(readOnly = true)

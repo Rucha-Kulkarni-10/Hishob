@@ -50,6 +50,7 @@ public class AuthServiceClient {
                     .uri(uriBuilder -> uriBuilder
                             .path("/api/auth/users/{userId}/exists")
                             .build(userId))
+                    .header(INTERNAL_TOKEN_HEADER, internalToken)
                     .retrieve()
                     .toBodilessEntity();
         } catch (HttpClientErrorException.NotFound nf) {

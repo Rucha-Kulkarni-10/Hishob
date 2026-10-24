@@ -3,6 +3,7 @@ package com.hishob.auth.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hishob.auth.dto.AuthResponse;
 import com.hishob.auth.dto.RegisterRequest;
+import com.hishob.auth.entity.User;
 import com.hishob.auth.repository.UserRepository;
 import com.hishob.auth.security.InternalAuthFilter;
 import com.hishob.auth.service.FriendshipService;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -49,6 +51,9 @@ class HealthAndErrorHandlingIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Value("${hishob.internal.token}")
+    private String internalToken;
 
     @MockitoBean
     private FriendshipService friendshipService;
@@ -169,10 +174,41 @@ class HealthAndErrorHandlingIntegrationTest {
     @Test
     @DisplayName("Non-UUID path variable returns 400 instead of 500")
     void invalidPathType_ReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/auth/users/not-a-uuid/exists"))
+        // B-08 put /users/{id}/exists behind the internal-token chain, so the 400 the handler
+        // produces for a bad UUID is only observable to a service caller.
+        mockMvc.perform(get("/api/auth/users/not-a-uuid/exists")
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, internalToken))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.status").value(400))
                 .andExpect(content().string(not(containsString("MethodArgumentTypeMismatch"))));
+    }
+
+    @Test
+    @DisplayName("B-08: anonymous and user-JWT calls to the exists endpoint are refused")
+    void userExistsEndpoint_IsNotPublic() throws Exception {
+        String path = "/api/auth/users/" + UUID.randomUUID() + "/exists";
+
+        mockMvc.perform(get(path))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get(path)
+                        .header("Authorization", registerAndLogin()))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get(path)
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, "definitely-not-the-internal-token"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get(path)
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, internalToken))
+                .andExpect(status().isNotFound());
+
+        UUID existingUserId = userRepository.save(
+                new User("Exists Target", UUID.randomUUID() + "@health.test", "hashed-value")).getId();
+
+        mockMvc.perform(get("/api/auth/users/" + existingUserId + "/exists")
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, internalToken))
+                .andExpect(status().isOk());
     }
 
     @Test

@@ -7,9 +7,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class InternalAuthFilterCredentialGuardTest {
 
     private static final String VALID_TOKEN = "0123456789abcdef0123456789abcdef0123456789";
+    private static final String SAME_LENGTH_DIFFERENT_TOKEN = "0123456789abcdef0123456789abcdef0123456788";
     private static final List<String> PLACEHOLDER_TOKENS = List.of(
             "your-internal-token-0123456789abcdef",
             "REPLACE-WITH-INTERNAL-TOKEN-01234567",
@@ -86,7 +90,9 @@ class InternalAuthFilterCredentialGuardTest {
         assertThatCode(() -> new InternalAuthFilter(VALID_TOKEN)).doesNotThrowAnyException();
 
         InternalAuthFilter filter = new InternalAuthFilter(VALID_TOKEN);
-        assertThat(ReflectionTestUtils.getField(filter, "expectedToken")).isEqualTo(VALID_TOKEN);
+        assertThat((byte[]) ReflectionTestUtils.getField(filter, "expectedToken"))
+                .as("The configured token is kept byte-for-byte, so the comparison cannot be weakened by normalisation")
+                .isEqualTo(VALID_TOKEN.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test
@@ -101,6 +107,24 @@ class InternalAuthFilterCredentialGuardTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
         assertThat(chain.getRequest()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    @DisplayName("A same-length token differing only in the final byte gets 401")
+    void sameLengthDifferentTokenStillRejected() throws Exception {
+        assertThat(SAME_LENGTH_DIFFERENT_TOKEN).hasSameSizeAs(VALID_TOKEN);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/probe");
+        request.addHeader(InternalAuthFilter.INTERNAL_TOKEN_HEADER, SAME_LENGTH_DIFFERENT_TOKEN);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        new InternalAuthFilter(VALID_TOKEN).doFilterInternal(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
+        assertThat(chain.getRequest()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
@@ -114,10 +138,11 @@ class InternalAuthFilterCredentialGuardTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_UNAUTHORIZED);
         assertThat(chain.getRequest()).isNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    @DisplayName("Request-time behaviour unchanged: the configured token still passes through")
+    @DisplayName("The configured token passes through and grants only the INTERNAL_SERVICE authority")
     void configuredTokenStillAccepted() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/probe");
         request.addHeader(InternalAuthFilter.INTERNAL_TOKEN_HEADER, VALID_TOKEN);
@@ -128,5 +153,13 @@ class InternalAuthFilterCredentialGuardTest {
 
         assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
         assertThat(chain.getRequest()).isSameAs(request);
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.isAuthenticated()).isTrue();
+        assertThat(authentication.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .as("Exactly one authority, so hasAuthority() cannot be satisfied by an ordinary user role")
+                .containsExactly(InternalAuthFilter.INTERNAL_SERVICE_AUTHORITY);
     }
 }

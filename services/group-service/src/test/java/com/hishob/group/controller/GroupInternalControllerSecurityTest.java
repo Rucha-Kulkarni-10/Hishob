@@ -41,6 +41,7 @@ class GroupInternalControllerSecurityTest {
     private MockMvc mockMvc;
 
     private static final String VALID_TOKEN = "hishob-test-internal-token-for-automated-tests-only";
+    private static final String VALID_TOKEN_SAME_LENGTH = "hishob-test-internal-token-for-automated-tests-onlY";
 
     private UUID groupId;
     private UUID memberId;
@@ -124,5 +125,21 @@ class GroupInternalControllerSecurityTest {
         mockMvc.perform(get("/api/groups")
                         .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, VALID_TOKEN))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Internal groupExists — same-length token differing only in the final byte returns 401")
+    void testGroupExists_SameLengthDifferentToken_Unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/groups/" + groupId + "/exists")
+                        .header(InternalAuthFilter.INTERNAL_TOKEN_HEADER, VALID_TOKEN_SAME_LENGTH))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("Internal groupExists — a bearer JWT without the internal token returns 401")
+    void testGroupExists_UserJwtWithoutInternalToken_Unauthorized() throws Exception {
+        mockMvc.perform(get("/internal/groups/" + groupId + "/exists")
+                        .header("Authorization", "Bearer not.a.valid.token"))
+                .andExpect(status().isUnauthorized());
     }
 }
