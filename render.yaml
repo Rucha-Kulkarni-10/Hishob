@@ -1,19 +1,19 @@
+
 # =============================================================================
 # HISHOB Render Blueprint Specification
 # =============================================================================
 # Architecture:
-#   - 1 PostgreSQL Free database (4 isolated schemas initialized manually)
-#   - 4 Docker Web Services on Free plan (API Gateway + 3 consolidated backend services)
-#   - Inter-service REST calls routed via public HTTPS URLs
-#   - Dynamic secret generation (JWT_SECRET, INTERNAL_SERVICE_TOKEN)
+#   - 1 PostgreSQL database with isolated schemas
+#   - 4 Docker Web Services: Gateway, Auth, Expense, Settlement
+#   - Inter-service REST calls via public HTTPS URLs
+#   - Render-managed JWT and internal-service secrets
 # =============================================================================
 
 version: "1"
 
 databases:
-  # WARNING: Render's free PostgreSQL tier is deleted after 30 days and is not
-  # durable production storage; a paid database plan (or external managed DB)
-  # is a required hosting decision before real user data relies on this stack.
+  # WARNING: Render Free PostgreSQL expires after 30 days.
+  # Do not rely on it for durable production user data.
   - name: hishob-postgres
     databaseName: hishob_db
     user: hishob_user
@@ -27,26 +27,6 @@ envVarGroups:
         generateValue: true
       - key: INTERNAL_SERVICE_TOKEN
         generateValue: true
-      - key: DB_HOST
-        fromDatabase:
-          name: hishob-postgres
-          property: host
-      - key: DB_PORT
-        fromDatabase:
-          name: hishob-postgres
-          property: port
-      - key: DB_NAME
-        fromDatabase:
-          name: hishob-postgres
-          property: database
-      - key: DB_USERNAME
-        fromDatabase:
-          name: hishob-postgres
-          property: user
-      - key: DB_PASSWORD
-        fromDatabase:
-          name: hishob-postgres
-          property: password
       - key: DB_SSLMODE
         value: require
       - key: EUREKA_CLIENT_ENABLED
@@ -92,6 +72,26 @@ services:
     healthCheckPath: /health
     envVars:
       - fromGroup: hishob-shared
+      - key: DB_HOST
+        fromDatabase:
+          name: hishob-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: hishob-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: hishob-postgres
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: hishob-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: hishob-postgres
+          property: password
       - key: DB_SCHEMA
         value: hishob_auth
 
@@ -108,6 +108,26 @@ services:
     healthCheckPath: /health
     envVars:
       - fromGroup: hishob-shared
+      - key: DB_HOST
+        fromDatabase:
+          name: hishob-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: hishob-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: hishob-postgres
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: hishob-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: hishob-postgres
+          property: password
       - key: DB_SCHEMA
         value: hishob_expense
 
@@ -124,5 +144,25 @@ services:
     healthCheckPath: /health
     envVars:
       - fromGroup: hishob-shared
+      - key: DB_HOST
+        fromDatabase:
+          name: hishob-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: hishob-postgres
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: hishob-postgres
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: hishob-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: hishob-postgres
+          property: password
       - key: DB_SCHEMA
         value: hishob_settlement
