@@ -3,22 +3,33 @@
 # HISHOB Render Blueprint Specification
 # =============================================================================
 # Architecture:
-#   - 1 PostgreSQL database with isolated schemas
+#   - External PostgreSQL provided by Neon (no Render-managed database)
 #   - 4 Docker Web Services: Gateway, Auth, Expense, Settlement
 #   - Inter-service REST calls via public HTTPS URLs
 #   - Render-managed JWT and internal-service secrets
+#
+# Database: Neon project rapid-mud-38475345, branch "production".
+#   Render free PostgreSQL expired/expires after 30 days, so the managed
+#   "databases:" resource has been removed. Each service keeps using the
+#   existing DB_HOST / DB_PORT / DB_NAME / DB_USERNAME / DB_PASSWORD /
+#   DB_SCHEMA / DB_SSLMODE placeholders in its application.yml.
+#
+#   DB_PASSWORD is declared with "sync: false": Render asks for its value in
+#   the Dashboard when the Blueprint is first applied and never stores it in
+#   this file. Later Blueprint syncs ignore this key, so rotate it from the
+#   Dashboard, not here.
+#
+#   These values assume one Neon database ("neondb") holding one schema per
+#   service. If the migration instead creates a database per service, change
+#   each DB_NAME and set DB_SCHEMA to public, matching the local setup.
+#
+#   If a service ever needs JDBC options that application.yml cannot express
+#   through these placeholders (for example channel_binding=require, or a
+#   pooled Neon endpoint), set SPRING_DATASOURCE_URL for that service as a
+#   Dashboard-only secret instead of editing the placeholder template.
 # =============================================================================
 
 version: "1"
-
-databases:
-  # WARNING: Render Free PostgreSQL expires after 30 days.
-  # Do not rely on it for durable production user data.
-  - name: hishob-postgres
-    databaseName: hishob_db
-    user: hishob_user
-    plan: free
-    region: oregon
 
 envVarGroups:
   - name: hishob-shared
@@ -73,25 +84,15 @@ services:
     envVars:
       - fromGroup: hishob-shared
       - key: DB_HOST
-        fromDatabase:
-          name: hishob-postgres
-          property: host
+        value: ep-small-hall-b4p77kw2.c-6.us-east-2.aws.neon.tech
       - key: DB_PORT
-        fromDatabase:
-          name: hishob-postgres
-          property: port
+        value: "5432"
       - key: DB_NAME
-        fromDatabase:
-          name: hishob-postgres
-          property: database
+        value: neondb
       - key: DB_USERNAME
-        fromDatabase:
-          name: hishob-postgres
-          property: user
+        value: neondb_owner
       - key: DB_PASSWORD
-        fromDatabase:
-          name: hishob-postgres
-          property: password
+        sync: false
       - key: DB_SCHEMA
         value: hishob_auth
 
@@ -109,25 +110,15 @@ services:
     envVars:
       - fromGroup: hishob-shared
       - key: DB_HOST
-        fromDatabase:
-          name: hishob-postgres
-          property: host
+        value: ep-small-hall-b4p77kw2.c-6.us-east-2.aws.neon.tech
       - key: DB_PORT
-        fromDatabase:
-          name: hishob-postgres
-          property: port
+        value: "5432"
       - key: DB_NAME
-        fromDatabase:
-          name: hishob-postgres
-          property: database
+        value: neondb
       - key: DB_USERNAME
-        fromDatabase:
-          name: hishob-postgres
-          property: user
+        value: neondb_owner
       - key: DB_PASSWORD
-        fromDatabase:
-          name: hishob-postgres
-          property: password
+        sync: false
       - key: DB_SCHEMA
         value: hishob_expense
 
@@ -145,24 +136,14 @@ services:
     envVars:
       - fromGroup: hishob-shared
       - key: DB_HOST
-        fromDatabase:
-          name: hishob-postgres
-          property: host
+        value: ep-small-hall-b4p77kw2.c-6.us-east-2.aws.neon.tech
       - key: DB_PORT
-        fromDatabase:
-          name: hishob-postgres
-          property: port
+        value: "5432"
       - key: DB_NAME
-        fromDatabase:
-          name: hishob-postgres
-          property: database
+        value: neondb
       - key: DB_USERNAME
-        fromDatabase:
-          name: hishob-postgres
-          property: user
+        value: neondb_owner
       - key: DB_PASSWORD
-        fromDatabase:
-          name: hishob-postgres
-          property: password
+        sync: false
       - key: DB_SCHEMA
         value: hishob_settlement
