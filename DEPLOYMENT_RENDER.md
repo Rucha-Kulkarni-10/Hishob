@@ -39,8 +39,12 @@ To prevent instance-hour exhaustion and avoid broken private networking on Rende
    * Because services spin down when idle, this test deployment is intended for on-demand evaluation and smoke testing.
 3. **PostgreSQL Expiration**: Render Free PostgreSQL databases expire and are deleted **30 days** after creation. This is not durable storage: a paid database plan (or an external managed PostgreSQL instance) is a required hosting decision before real user data relies on this stack.
 4. **No Private Networking on Free Tier**: Free web services cannot receive traffic over Render's internal private network (`*.render.internal`). Consequently, all inter-service REST calls (e.g. Settlement Service calling Expense or Auth services) must use the public HTTPS URLs protected by the internal service token (`X-Internal-Token`).
-5. **Memory Constraints**: Free tier containers have **512 MB RAM** and **0.1 vCPU**. The JVM runtime is explicitly tuned with conservative memory settings:
+5. **Memory Constraints**: Free tier containers have **512 MB RAM** and **0.1 vCPU** (per Render's published free-plan limits; this deployment does not capture live per-instance memory metrics, so the budgets below are validated against locally measured JVM footprints, not Render telemetry). Gateway, Expense and Settlement keep the original conservative settings:
    `-XX:+UseSerialGC -Xmx220m -Xms128m -XX:MaxMetaspaceSize=96m`
+   * **Auth Service** overrides them because it is the one service whose metadata demand exceeds that ceiling — it pinned the 96 MB cap and threw `OutOfMemoryError: Metaspace` during registration:
+     `-XX:+UseSerialGC -Xms96m -Xmx192m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=32m`
+   * Measured demand on the production classpath: ~93 MB Metaspace after startup plus one registration, ~96 MB after the full authenticated journey (login, friends, notifications, internal endpoints). Growth is one-off warm-up, not a leak, so the fix is sizing, not symptom suppression. `MaxMetaspaceSize` is a ceiling, not a reservation, so the higher cap costs no RAM until demand reaches it; heap `-Xmx` was cut from 220m to 192m (live set measured ~44 MB) and the two previously unbounded native areas (code cache, direct buffers) were capped to keep total RSS inside 512 MB.
+   * The same Metaspace ceiling is a latent risk for any other service whose metadata grows past 96 MB; it has only been raised for Auth, where it is proven.
 
 ---
 

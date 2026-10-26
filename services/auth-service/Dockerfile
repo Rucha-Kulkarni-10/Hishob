@@ -38,7 +38,11 @@ RUN chown -R hishob:hishob /app
 USER hishob:hishob
 
 ENV PORT=8081
-ENV JAVA_OPTS="-XX:+UseSerialGC -Xmx220m -Xms128m -XX:MaxMetaspaceSize=96m"
+# Free-tier budget for Render's 512 MB container, sized from measured demand on
+# this classpath (~96 MB live Metaspace after login/friends/notifications use,
+# ~44 MB heap live set). MaxMetaspaceSize is a ceiling, not a reservation.
+# Rationale and measurements: DEPLOYMENT_RENDER.md, section 2 item 5.
+ENV JAVA_OPTS="-XX:+UseSerialGC -Xms96m -Xmx192m -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=32m"
 
 EXPOSE ${PORT}
 
