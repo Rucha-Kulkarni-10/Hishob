@@ -22,7 +22,7 @@ COPY services/notification-service/pom.xml services/notification-service/pom.xml
 COPY . .
 
 # Package the Auth Service artifact
-RUN ./mvnw clean package -pl services/auth-service -am -DskipTests -B
+RUN sh ./mvnw clean package -pl services/auth-service -am -DskipTests -B
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine

@@ -22,7 +22,7 @@ COPY services/notification-service/pom.xml services/notification-service/pom.xml
 COPY . .
 
 # Package the API Gateway artifact
-RUN ./mvnw clean package -pl gateway/api-gateway -am -DskipTests -B
+RUN sh ./mvnw clean package -pl gateway/api-gateway -am -DskipTests -B
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
