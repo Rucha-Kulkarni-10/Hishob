@@ -96,9 +96,29 @@ Render PostgreSQL free instances grant standard user privileges but deny databas
 ### Step 2: Configure CORS Origins
 In `render.yaml`, the API Gateway has `CORS_ALLOWED_ORIGINS` configured:
 ```yaml
-CORS_ALLOWED_ORIGINS: "https://hishob-web.vercel.app,http://localhost:5173"
+CORS_ALLOWED_ORIGINS: "https://hishob-one.vercel.app,http://localhost:5173"
 ```
-If your Vercel deployment uses a custom domain or preview URL (e.g., `https://hishob-web-git-main-xxx.vercel.app`), add the domain to `CORS_ALLOWED_ORIGINS` in the Gateway's environment settings in Render. Wildcards are supported (e.g. `https://*.vercel.app`).
+This is a comma-separated list matched against the browser's `Origin` header by the `CorsWebFilter`
+in `ApiGatewayApplication`. Any origin not listed here gets **no `Access-Control-Allow-Origin` header**,
+so the preflight is rejected and the frontend sees `net::ERR_FAILED` — the origin value must equal the
+deployed Vercel URL exactly, including scheme and no trailing slash.
+
+If you add a custom domain or need Vercel preview deployments to work, append each exact origin to this
+list (and to the Gateway's environment settings in the Render Dashboard until the Blueprint is synced).
+Do not widen this to `https://*.vercel.app`: origin patterns are honoured by `UrlBasedCorsConfigurationSource`,
+but a wildcard lets any Vercel project call the gateway and turns into a hard browser error the moment
+`Access-Control-Allow-Credentials` is enabled. Credentials are deliberately off — the frontend sends the
+JWT in the `Authorization` header, not a cookie.
+
+Verify a deployed gateway from the command line (expect `200` and the echoed origin):
+```bash
+curl -i -X OPTIONS https://hishob-gateway.onrender.com/api/auth/login \
+  -H "Origin: https://hishob-one.vercel.app" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+```
+An unlisted origin must return `403` with no `Access-Control-Allow-Origin` header — that is the
+fail-closed behaviour, not a bug.
 
 ---
 

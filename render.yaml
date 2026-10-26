@@ -68,7 +68,7 @@ services:
     envVars:
       - fromGroup: hishob-shared
       - key: CORS_ALLOWED_ORIGINS
-        value: "https://hishob-web.vercel.app,http://localhost:5173"
+        value: "https://hishob-one.vercel.app,http://localhost:5173"
 
   # ---------------------------------------------------------------------------
   # 2. Auth Service
